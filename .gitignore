@@ -1,0 +1,4 @@
+# Bytecode: la versión de Python de quien compile no tiene por qué ser la de
+# nadie más. Lo ya versionado se queda como está; esto sólo evita que entre más.
+__pycache__/
+*.py[cod]
