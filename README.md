@@ -44,7 +44,7 @@ python main.py --debug
 | `updater.py` | Sincronización incremental con estado en SQLite. Nunca borra archivos. |
 | `trionauth.py` | Autenticación contra `auth.trionworlds.com`, 2FA por email, keep-alive y caché del ticket cifrada con DPAPI. |
 | `inject.py` | Entrega del ticket al juego tal y como lo hace Glyph: blob RIFT cifrado con RC4 en un file-mapping heredable. |
-| `launch.py` | Cadenas de servidor de autenticación por región y foco de la ventana. |
+| `launch.py` | Cadenas de servidor de autenticación por región. |
 | `installs.py` | Detección de instalaciones: registro, Steam y carpetas propias. |
 | `prefs.py` | Preferencias, cuentas y contraseñas cifradas con DPAPI. |
 | `service.py` | Orquestador: hilo de trabajo, 2FA, auto-relog y progreso. |
@@ -104,6 +104,12 @@ con `OpenProcess(pid_del_launcher)` + `DuplicateHandle`. Si cerramos el mapping
 y el evento justo tras lanzar, el juego duplica un objeto vacío y vuelve a la
 pantalla de login. Por eso `inject.py` los guarda en `_SESSION_HANDLES` y los
 mantiene abiertos mientras el launcher viva.
+
+**El launcher no toca las ventanas del juego.** Ni las trae al frente, ni las
+restaura, ni las enumera: nada de `EnumWindows`, `ShowWindow` ni
+`SetForegroundWindow`. Ahorrarle un alt-tab a alguien no compensa ponerse a
+manipular ventanas ajenas desde un cliente de terceros. Cerrar una partida sí
+sigue estando, porque el proceso lo arrancó el propio launcher.
 
 **El loader del anti-cheat.** Si existe `xldr_Trove_GL_loader_x64.exe` junto al
 ejecutable, se lanza a través de él con el nombre del juego como `argv[1]` (no

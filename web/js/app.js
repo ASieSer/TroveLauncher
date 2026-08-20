@@ -37,7 +37,6 @@
         verify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
         play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.5 4.2v15.6a1 1 0 0 0 1.53.85l12.2-7.8a1 1 0 0 0 0-1.7L8.03 3.35A1 1 0 0 0 6.5 4.2z"/></svg>',
         stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
-        focus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
         eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3.2"/></svg>',
         eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 6.2A8.9 8.9 0 0 1 12 6c6.5 0 10.5 6.6 10.5 6.6a17 17 0 0 1-3.2 3.7M6.2 8A17 17 0 0 0 1.5 12.6S5.5 19 12 19a9.7 9.7 0 0 0 4-.85"/><path d="M9.9 10.5a3.2 3.2 0 0 0 4.3 4.4"/><path d="M3 3l18 18"/></svg>',
         refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5"/></svg>',
@@ -356,9 +355,9 @@
             }));
 
         if (account.status === 'running') {
-            actions.appendChild(actionButton('focus',
-                `Bring the game window to the front (pid ${account.pid})`, 'accent',
-                () => call('focus', account.pid)));
+            // No hay botón de "traer al frente": el launcher no toca la ventana
+            // del juego. Cerrar sí es cosa suya —lo arrancó él—, pero enumerar
+            // ventanas ajenas y robarles el foco no lo necesita nadie aquí.
             const stop = actionButton('stop', `Stop the game (pid ${account.pid})`, 'danger',
                 () => stopAccount(account));
             if (grow) stop.classList.add('grow');

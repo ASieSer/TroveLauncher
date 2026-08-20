@@ -85,10 +85,6 @@ class Api:
         return self._service.stop(pid)
 
     @_safe
-    def focus(self, pid):
-        return self._service.focus(pid)
-
-    @_safe
     def submit_2fa(self, email, code):
         return self._service.submit_2fa(email, code)
 

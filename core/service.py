@@ -543,23 +543,6 @@ class LauncherService:
         threading.Thread(target=self._monitor_launch, args=(pid,), daemon=True,
                          name=f"trove-mon-{pid}").start()
 
-    def focus(self, pid: int) -> dict:
-        """Trae al frente la ventana de una partida ya lanzada."""
-        from . import launch as launch_mod
-
-        pid = int(pid)
-        with self._launch_lock:
-            known = pid in self._launches
-        if not known:
-            return {"ok": False, "error": "That process is not tracked by the launcher."}
-        try:
-            ok = launch_mod.focus_window_by_pid(pid)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-        if not ok:
-            return {"ok": False, "error": f"No visible window found for process {pid}."}
-        return {"ok": True, "pid": pid}
-
     def stop(self, pid: int) -> dict:
         """Cierra el juego de una instancia lanzada por nosotros.
 
@@ -752,13 +735,10 @@ class LauncherService:
                 "region": region, "branch": branch, "auto_relog": auto_relog,
             })
 
-            # Damos un momento a que aparezca la ventana y la traemos al frente.
-            time.sleep(2.0)
-            try:
-                launch_mod.focus_window_by_pid(pid)
-            except Exception:
-                pass
-
+            # El launcher no toca la ventana del juego: ni la trae al frente, ni
+            # la restaura, ni la enumera. Nada de lo que hacemos aquí necesita
+            # hablar con las ventanas de otro proceso, y no vamos a mover el
+            # ratón ni el foco de quien esté jugando para ahorrarle un alt-tab.
             self._record_result(email, True, f"Launched OK (pid {pid}).")
             self.emit("play", "launched", done=True, ok=True, pid=pid, email=email,
                       message=f"{who} launched (pid {pid}).")
