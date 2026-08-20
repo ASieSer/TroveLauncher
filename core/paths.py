@@ -119,7 +119,13 @@ def macaddr_path() -> Path:
 
 
 def base_dir() -> Path:
-    """Raíz de la aplicación (para localizar ``web/``), tanto en fuente como congelada."""
+    """Raíz de la aplicación: de dónde cuelgan ``web/`` y ``native/``.
+
+    Congelada con PyInstaller, los datos no viven junto al ejecutable sino en la
+    carpeta que él prepara y anuncia en ``sys._MEIPASS`` (``_internal/`` en un
+    paquete de carpeta, un temporal en uno de fichero único). Mirar junto al
+    ejecutable funcionaba con PyInstaller 5 y dejó de hacerlo en el 6.
+    """
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     return Path(__file__).resolve().parent.parent
