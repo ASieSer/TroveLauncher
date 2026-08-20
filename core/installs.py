@@ -1,10 +1,12 @@
 """Encontrar las instalaciones de Trove del equipo.
 
-Tres orígenes, en este orden:
+Cuatro orígenes, en este orden:
 
   1. Registro de Windows -> ``Uninstall\\Glyph Trove*`` -> ``InstallLocation``.
   2. Steam -> ``libraryfolders.vdf`` -> ``steamapps/common/Trove/Games/Trove/*``.
-  3. Carpetas que el usuario añade a mano (guardadas en prefs).
+  3. Prefijos de Wine y de Proton (sólo en Linux): el juego es de Windows, así
+     que allí vive dentro de un prefijo, bajo ``drive_c``.
+  4. Carpetas que el usuario añade a mano (guardadas en prefs).
 
 Una carpeta sólo cuenta como instalación si contiene un ejecutable de Trove
 válido, lo que comprobamos leyendo la cabecera PE (ejecutable GUI de Windows) en
@@ -283,6 +285,65 @@ def _glyph_dirs() -> list[Path]:
     return dirs
 
 
+def _wine_prefixes() -> list[Path]:
+    """Prefijos donde puede haber un Trove instalado, en Linux.
+
+    Dos familias: los de Proton, uno por juego, bajo
+    ``steamapps/compatdata/<appid>/pfx``; y los de Wine a secas, que suelen ser
+    ``~/.wine`` o carpetas de Lutris/Bottles. No se buscan a lo ancho del disco:
+    sólo en los sitios donde por convenio están.
+    """
+    if os.name == "nt":
+        return []
+    home = Path.home()
+    out: list[Path] = []
+    for root in _steam_roots():
+        for library in [root] + _steam_library_paths(root):
+            compat = library / "steamapps" / "compatdata"
+            try:
+                out += [entry / "pfx" for entry in compat.iterdir() if entry.is_dir()]
+            except OSError:
+                continue
+    for base in (home / ".wine",
+                 home / "Games",
+                 home / ".local" / "share" / "wineprefixes",
+                 home / ".var" / "app" / "net.lutris.Lutris" / "data" / "lutris" / "runners",
+                 home / ".local" / "share" / "lutris" / "runners"):
+        if (base / "drive_c").is_dir():
+            out.append(base)
+            continue
+        try:
+            out += [entry for entry in base.iterdir() if (entry / "drive_c").is_dir()]
+        except OSError:
+            continue
+    return out
+
+
+def _trove_dirs_under_prefixes() -> list[Path]:
+    """Instalaciones de Glyph dentro de un prefijo.
+
+    Dentro, la estructura es la de Windows, así que se mira donde miraríamos en
+    un disco: ``<drive_c>/Glyph/Games/Trove/*`` y lo mismo colgando de
+    ``Program Files``/``Program Files (x86)``, que es donde el instalador de
+    Glyph la deja.
+    """
+    found: list[Path] = []
+    for prefix in _wine_prefixes():
+        drive_c = prefix / "drive_c"
+        bases = [drive_c, drive_c / "Program Files", drive_c / "Program Files (x86)"]
+        for base in bases:
+            root = base / _GLYPH_SUFFIX
+            try:
+                if not root.is_dir():
+                    continue
+                for sub in root.iterdir():
+                    if sub.is_dir() and is_valid_install(sub):
+                        found.append(sub)
+            except OSError:
+                continue
+    return found
+
+
 def _steam_roots() -> list[Path]:
     roots = []
     for value_name in ("InstallPath", "SteamPath"):
@@ -328,6 +389,8 @@ def _scan() -> list[dict]:
     for root in _steam_roots():
         for path in _trove_dirs_under_steam(root):
             _push(_entry(path, "steam"))
+    for path in _trove_dirs_under_prefixes():
+        _push(_entry(path, "wine"))
     return found
 
 

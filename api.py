@@ -85,10 +85,6 @@ class Api:
         return self._service.stop(pid)
 
     @_safe
-    def focus(self, pid):
-        return self._service.focus(pid)
-
-    @_safe
     def submit_2fa(self, email, code):
         return self._service.submit_2fa(email, code)
 
@@ -203,7 +199,7 @@ class Api:
     def save_prefs(self, changes):
         allowed = {"remember_password", "update_first", "reparent_glyph",
                    "hide_emails", "game_path", "pts_game_path", "theme",
-                   "layout"}
+                   "wine_binary", "wine_prefix"}
         clean = {k: v for k, v in (changes or {}).items() if k in allowed}
         prefs.save(**clean)
         return {"saved": clean}

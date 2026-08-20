@@ -3,15 +3,13 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Trove Launcher</title>
+    <title>Trove Accounts Hub</title>
     <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 
 <header class="appbar">
-    <span class="brand-mark"></span>
-    <span class="brand-name">Trove Launcher</span>
-    <span class="brand-version">v0.1</span>
+    <span class="brand" id="brand"></span>
     <div class="appbar-right">
         <button id="install-live" class="install-chip" title="Live installation"></button>
         <button id="install-pts" class="install-chip hidden" title="PTS installation"></button>
@@ -38,12 +36,6 @@
 </div>
 
 <main class="board">
-    <div class="board-head">
-        <span>Account</span>
-        <span>Server</span>
-        <span>Status</span>
-        <span class="col-actions">Actions</span>
-    </div>
     <div id="rows" class="board-body"></div>
     <div id="empty-state" class="empty hidden">
         <p>No accounts yet.</p>
@@ -53,6 +45,7 @@
 
 <footer class="statusbar">
     <div class="left">
+        <span class="app-name"><b>Trove Accounts Hub</b> v0.1</span>
         <span id="sweep"></span>
         <div id="progress" class="hidden" style="display:flex;align-items:center;gap:10px">
             <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
@@ -81,25 +74,32 @@
                 </div>
             </div>
             <div class="field">
-                <label>Account layout</label>
-                <div class="segmented">
-                    <button data-layout="cards">Cards</button>
-                    <button data-layout="table">Table</button>
-                </div>
+                <label for="theme-club">Club theme</label>
+                <select id="theme-club">
+                    <option value="">None</option>
+                    <option value="mystic-cave">Mystic Cave</option>
+                    <option value="arsyn">Arsyn</option>
+                    <option value="sayro">Sayro</option>
+                </select>
             </div>
             <label class="check">
                 <input type="checkbox" id="opt-stars">
                 <span>Background particles</span>
             </label>
             <div class="field"><label>Accent</label>
-            <div class="theme-swatches" id="theme-swatches"></div></div>
+                <div class="theme-swatches" id="theme-swatches"></div>
+                <div class="theme-swatches customs" id="theme-customs"></div>
+            </div>
+            <p class="note hidden" id="accent-locked-note">The club theme sets the accent. Pick
+                <em>None</em> to choose your own colour again.</p>
             <div class="field">
                 <label>Tint strength — <span id="tint-value"></span></label>
                 <input type="range" id="theme-tint" min="0" max="1" step="0.05">
             </div>
-            <p class="note">The accent tints every surface and marks the primary action and live
-                states. Tint strength controls how much colour reaches the background: at 0% the
-                interface is neutral grey.</p>
+            <p class="note">A club theme swaps the launcher's mark and name for the club's and
+                fixes the accent to its colour; tint strength stays yours. The accent tints every
+                surface and marks the primary action and live states, and at 0% tint the interface
+                is neutral grey.</p>
         </div>
     </details>
 
@@ -149,11 +149,7 @@
                 <input type="checkbox" id="opt-remember-password">
                 <span>Save account passwords</span>
             </label>
-            <p class="note">Accounts themselves are always stored. This only covers the
-                <em>password</em>, encrypted with Windows DPAPI so only this Windows user on this
-                machine can read it. Without it you must retype it once the Trion session expires
-                (~48h), and auto-relog cannot work at all — a background relaunch has no way to
-                ask you for it.</p>
+            <p class="note" id="vault-note"></p>
             <label class="check">
                 <input type="checkbox" id="opt-reparent">
                 <span>Launch as a child of Glyph when it's running</span>
@@ -161,6 +157,29 @@
             <p class="note">Auto-relog is per account, with the loop button on its row. The Glyph
                 option only changes the process ancestry and needs GlyphClientApp.exe already
                 running.</p>
+        </div>
+    </details>
+
+    <details class="drawer-section hidden" id="wine-section">
+        <summary><h3>Wine</h3></summary>
+        <div class="section-body">
+            <p class="note" id="wine-status"></p>
+            <div class="field">
+                <label for="wine-binary">Wine binary</label>
+                <input type="text" id="wine-binary" spellcheck="false"
+                       placeholder="Auto-detected (wine)">
+            </div>
+            <div class="field">
+                <label for="wine-prefix">Wine prefix</label>
+                <input type="text" id="wine-prefix" spellcheck="false"
+                       placeholder="Taken from the game folder">
+            </div>
+            <p class="note">Trove is a Windows game, so on Linux it lives inside a Wine or
+                Proton prefix and can only be handed its ticket from in there. Leave both
+                empty and they are worked out on their own: the prefix from the game folder
+                you picked, the binary from your PATH. Point them somewhere else to use a
+                different runner — Proton's own <em>wine</em> lives under
+                <em>dist/bin/wine</em>.</p>
         </div>
     </details>
 

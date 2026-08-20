@@ -1,7 +1,7 @@
 @import url("../fonts/quicksand.css");
 @import url("../fonts/comfortaa.css");
 
-/* Trove Launcher — tema oscuro plano, sobrio, de aire técnico.
+/* Trove Accounts Hub — tema oscuro plano, sobrio, de aire técnico.
  *
  * Reglas del diseño:
  *
@@ -46,7 +46,6 @@
 
     --r: 5px;
     --r-md: 7px;
-    --row-h: 54px;
 
     /* Una sola familia para toda la interfaz; el JS cambia esta variable.
        La monoespaciada queda reservada al registro, donde alinear importa. */
@@ -122,7 +121,9 @@ body > * { position: relative; z-index: 1; }
 
 .appbar {
     flex: none;
-    height: 42px;
+    /* Un poco más alta que una barra de título al uso: los rótulos de club son
+       apaisados y por debajo de ~30px de alto dejan de leerse. */
+    height: 48px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -130,15 +131,32 @@ body > * { position: relative; z-index: 1; }
     border-bottom: 1px solid var(--line);
     background: var(--surface-a);
 }
-.brand-mark {
-    width: 15px;
-    height: 15px;
-    border-radius: 4px;
+.brand { display: flex; align-items: center; min-width: 0; }
+
+/* Logo propio: el PNG/SVG va como MÁSCARA, no como imagen, para que lo que se
+   vea sea el fondo —el acento— y el logo se retiña con el resto de la interfaz
+   (mismo recurso que usa el botón de lanzar todo el grupo). La proporción sale
+   del viewBox del SVG, así que basta con fijar el alto. */
+.brand-lockup {
+    display: block;
+    height: 26px;
+    aspect-ratio: 118.89 / 26.2;
+    flex: none;
     background: var(--accent);
+    -webkit-mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
+    mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
+}
+/* El logo de un club es arte suyo y va a todo color: se escala por alto y
+   respeta su proporción, que en los tres es muy distinta (dos rótulos
+   apaisados, un retrato casi cuadrado). */
+.brand-logo {
+    display: block;
+    height: 30px;
+    width: auto;
+    max-width: 200px;
+    object-fit: contain;
     flex: none;
 }
-.brand-name { font-weight: 600; font-size: 13px; }
-.brand-version { font-family: var(--font); font-size: 11px; color: var(--text-faint); }
 
 /* --- barra de acciones --------------------------------------------------- */
 
@@ -189,42 +207,9 @@ body > * { position: relative; z-index: 1; }
 .counts b { color: var(--text-dim); font-weight: 600; }
 .counts .live { color: var(--accent); }
 
-/* --- tabla --------------------------------------------------------------- */
+/* --- tablero ------------------------------------------------------------- */
 
 .board { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-
-.board-head,
-.row {
-    display: grid;
-    grid-template-columns: minmax(200px, 440px) 118px 128px 178px minmax(0, 1fr);
-    align-items: center;
-    gap: 16px;
-    padding: 0 16px;
-}
-
-/* Las tres columnas «atómicas» van centradas, cabecera y contenido, para que
-   cada etiqueta quede justo encima de lo que nombra. La de cuenta se queda a la
-   izquierda: su contenido es de ancho variable y centrado bailaría fila a fila. */
-.board-head > :nth-child(2),
-.board-head > :nth-child(3),
-.board-head > :nth-child(4),
-.row > :nth-child(2),
-.row > :nth-child(3),
-.row > :nth-child(4) { text-align: center; }
-.row > :nth-child(3) { display: flex; justify-content: center; }
-
-.board-head {
-    height: 30px;
-    flex: none;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    color: var(--text-faint);
-}
-.board-head > :first-child { text-align: left; }
 
 .board-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
@@ -234,13 +219,11 @@ body > * { position: relative; z-index: 1; }
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 32px;
+    height: 34px;
+    margin-top: 6px;
     padding: 0 16px;
-    background: var(--surface-a);
-    border-bottom: 1px solid var(--line);
     cursor: pointer;
 }
-.group-head:hover { background: var(--surface-hi); }
 .group-caret {
     width: 10px; height: 10px; flex: none;
     display: inline-flex;
@@ -255,15 +238,7 @@ body > * { position: relative; z-index: 1; }
     font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
 }
 .group-count { font-family: var(--font); font-size: 10.5px; color: var(--text-faint); }
-.group-summary {
-    margin-left: auto;
-    font-size: 10px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase;
-    color: var(--text-faint);
-    display: flex; gap: 10px;
-}
-.group-summary .live { color: var(--accent); }
-.group-summary .bad { color: var(--danger); }
-.group-tools { display: flex; gap: 4px; opacity: 0; transition: opacity .12s; }
+.group-tools { margin-left: auto; display: flex; gap: 4px; opacity: 0; transition: opacity .12s; }
 .group-head:hover .group-tools { opacity: 1; }
 
 .more-row {
@@ -271,45 +246,19 @@ body > * { position: relative; z-index: 1; }
     text-align: center;
     font-size: 10px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase;
     color: var(--text-faint);
-    border-bottom: 1px solid var(--line);
     cursor: pointer;
 }
 .more-row:hover { color: var(--text-dim); background: var(--surface); }
 
-/* --- fila de cuenta ------------------------------------------------------ */
+/* --- servidor: recuadro pulsable ----------------------------------------- */
 
-.row {
-    height: var(--row-h);
-    border-bottom: 1px solid var(--line);
-}
-.row:hover { background: var(--surface-hi); }
-
-.account-cell { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.account-name {
-    font-weight: 600;
-    font-size: 13px;
-    line-height: 1.2;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.account-name.struck { text-decoration: line-through; color: var(--text-dim); }
-.account-mail {
-    font-family: var(--font);
-    font-size: 11px;
-    line-height: 1.2;
-    color: var(--text-faint);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-/* Mismo tratamiento que el badge de estado: recuadro, versalitas y ancho fijo,
-   para que las dos columnas centrales rimen. */
+/* Mismo tratamiento que el badge de estado: recuadro, versalitas y borde, para
+   que los dos datos de la tarjeta rimen. */
 .server-cell {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* Hijo directo del grid: sin esto se estira a todo el ancho de la columna
-       (el badge de estado se libra porque va dentro de un contenedor). */
-    justify-self: center;
-    min-width: 74px;
+    min-width: 46px;
     padding: 5.5px 9px;
     border-radius: var(--r);
     border: 1px solid var(--line-hi);
@@ -475,7 +424,7 @@ body > * { position: relative; z-index: 1; }
 /* --- arrastrar y soltar -------------------------------------------------- */
 
 .grip { width: 10px; flex: none; color: var(--text-faint); opacity: 0; cursor: grab; }
-.row:hover .grip, .group-head:hover .grip { opacity: .45; }
+.group-head:hover .grip { opacity: .45; }
 .group-head.dragging { opacity: .35; }
 .drop-into { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
@@ -519,6 +468,12 @@ body > * { position: relative; z-index: 1; }
     color: var(--text-faint);
 }
 .statusbar .left, .statusbar .right { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* La aplicación se nombra aquí, no arriba: con un tema de club la barra
+   superior enseña el logo del club y en ningún otro sitio diría cómo se llama
+   esto. */
+.statusbar .app-name { font-family: var(--font); color: var(--text-faint);
+                       text-transform: none; letter-spacing: .3px; flex: none; }
+.statusbar .app-name b { font-weight: 600; color: var(--text-dim); }
 .statusbar .msg { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11.5px;
                   color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .statusbar .msg.error { color: var(--danger); }
@@ -599,6 +554,12 @@ body > * { position: relative; z-index: 1; }
     font-size: 11.5px;
     line-height: 1.6;
 }
+/* Una nota que avisa de algo que no funciona: mismo bloque, borde encendido.
+   El texto se queda apagado — el aviso lo da el borde, no un párrafo en rojo. */
+.note.bad { border-left-color: var(--danger); }
+
+/* Los campos de texto del panel ocupan el ancho de su sección. */
+.drawer .field input[type="text"] { width: 100%; }
 
 .check { display: flex; align-items: center; gap: 9px; font-size: 12.5px; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
@@ -631,12 +592,59 @@ body > * { position: relative; z-index: 1; }
     padding: 0;
 }
 .theme-swatch.active { border-color: var(--text); }
-.theme-custom {
-    width: 22px; height: 22px;
-    padding: 0;
+/* Con un tema de club el acento lo fija el club: los controles se ven, pero no
+   se tocan. El tinte sigue libre — es intensidad, no color. */
+.theme-swatches.locked { opacity: .45; pointer-events: none; }
+
+/* Segunda fila: los colores que ha guardado el usuario. Va ligeramente metida
+   respecto a la paleta fija para que se lean como dos cosas distintas. */
+.theme-swatches.customs { margin-top: -2px; }
+
+/* La × de olvidar un color aparece al pasar por encima, dentro de la propia
+   muestra. El acento en uso no la lleva: mientras esté puesto sigue guardado. */
+.theme-swatch { position: relative; }
+.swatch-x {
+    position: absolute;
+    top: -5px; right: -5px;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1;
+    background: var(--surface-hi);
     border: 1px solid var(--line-hi);
+    color: var(--text-dim);
+}
+.theme-swatch:hover .swatch-x { display: flex; }
+.theme-swatch.active .swatch-x { display: none; }
+.swatch-x:hover { color: var(--text); border-color: var(--text-faint); }
+
+/* Añadir color: casilla de puntos con un «+» y, encima, el selector nativo
+   invisible — es quien abre el diálogo del sistema. */
+.theme-add {
+    position: relative;
+    width: 22px; height: 22px;
     border-radius: var(--r);
+    border: 1px dashed var(--line-hi);
     background: var(--field);
+    color: var(--text-faint);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+.theme-add:hover { border-color: var(--text-faint); color: var(--text); }
+.theme-add input {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    padding: 0;
+    border: 0;
+    opacity: 0;
     cursor: pointer;
 }
 
@@ -876,9 +884,6 @@ details.drawer-section[open] { padding-bottom: 10px; }
 }
 
 .card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-/* En la tarjeta los recuadros se ajustan al contenido: aquí no hay columnas que
-   alinear, así que el ancho mínimo de la tabla sólo estorbaría. */
-.card-meta .server-cell { justify-self: auto; min-width: 46px; }
 .card-meta .badge { min-width: 0; }
 
 .card .actions {
@@ -888,17 +893,6 @@ details.drawer-section[open] { padding-bottom: 10px; }
     margin-top: auto;
 }
 .act.grow { flex: 1; }
-
-/* En rejilla, la cabecera de grupo deja de ser una banda a lo ancho. */
-body.as-cards .group-head {
-    background: none;
-    border-bottom: none;
-    padding: 0 16px;
-    height: 34px;
-    margin-top: 6px;
-}
-body.as-cards .more-row { border-bottom: none; }
-
 
 /* --- lanzar todo el grupo ------------------------------------------------- */
 
@@ -956,23 +950,21 @@ body.as-cards .more-row { border-bottom: none; }
    Insertar un hueco aparte parpadeaba: cada inserción recolocaba la rejilla,
    el cursor pasaba a estar sobre otra tarjeta y el cálculo se repetía en bucle.
    Manteniendo constante el número de celdas, eso no ocurre. */
-.card.dragging,
-.row.dragging {
+.card.dragging {
     opacity: 1;
     border: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
     background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 /* El contenido se oculta pero sigue ocupando su sitio: la tarjeta conserva el
    tamaño exacto que tendrá al soltarse. */
-.card.dragging > *,
-.row.dragging > * { visibility: hidden; }
+.card.dragging > * { visibility: hidden; }
 
 /* --- zonas de destino por grupo ------------------------------------------ */
 
 /* No ocupan sitio hasta que empieza un arrastre; entonces cada grupo enseña
    dónde se puede soltar, incluidos los vacíos, que antes no ofrecían ningún
    punto de referencia. */
-.drop-slot, .drop-slot-row { display: none; }
+.drop-slot { display: none; }
 
 body.dragging-account .drop-slot {
     display: block;
@@ -981,16 +973,7 @@ body.dragging-account .drop-slot {
     border-radius: 8px;
     transition: border-color .12s ease, background .12s ease;
 }
-body.dragging-account .drop-slot-row {
-    display: block;
-    height: var(--row-h);
-    margin: 6px 16px;
-    border: 1px dashed color-mix(in srgb, var(--accent) 28%, transparent);
-    border-radius: var(--r);
-    transition: border-color .12s ease, background .12s ease;
-}
-body.dragging-account .drop-slot.over,
-body.dragging-account .drop-slot-row.over {
+body.dragging-account .drop-slot.over {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
@@ -999,7 +982,6 @@ body.dragging-account .drop-slot-row.over {
    hueco: mostrar además la zona del grupo dejaba dos recuadros vacíos seguidos,
    como si hubiera dos destinos distintos. */
 .card-grid:has(.card.dragging) .drop-slot { display: none; }
-.row-group:has(.row.dragging) .drop-slot-row { display: none; }
 
 /* Con el arrastre en curso, una categoría plegada sigue admitiendo la cuenta
    por su cabecera, así que se resalta igual. */

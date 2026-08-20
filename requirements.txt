@@ -1,2 +1,8 @@
 pywebview
 requests
+# En Linux pywebview dibuja con WebKitGTK, que además de este extra necesita los
+# paquetes del sistema (python3-gi, gir1.2-webkit2-4.1). Ver el README.
+pywebview[gtk]; sys_platform != "win32"
+# Llavero del escritorio: es donde van la contraseña y el ticket fuera de
+# Windows (en Windows ese papel lo hace DPAPI, que no necesita paquete).
+keyring; sys_platform != "win32"

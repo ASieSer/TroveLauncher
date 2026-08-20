@@ -1,4 +1,4 @@
-/* Trove Launcher — pantalla de cuentas.
+/* Trove Accounts Hub — pantalla de cuentas.
  *
  * JS -> Python: window.pywebview.api.<método>(...) devuelve una promesa. Toda
  * respuesta trae {ok: bool} y, si ok es false, un "error" ya legible.
@@ -13,6 +13,8 @@
 (function () {
     'use strict';
 
+    const APP_NAME = 'Trove Accounts Hub';
+
     const $ = (id) => document.getElementById(id);
     const api = () => (window.pywebview && window.pywebview.api) || null;
 
@@ -24,11 +26,10 @@
     let modalCleanup = null;
     let expanded = {};            // grupos con el "+N more" desplegado
     let looseCollapsed = false;   // ¿está plegada la sección «Ungrouped»?
-    let layout = 'cards';         // 'cards' (rejilla) | 'table' (filas)
 
-    // Un grupo enseña como mucho estas filas antes de plegar el resto, para que
-    // una carpeta con 20 muleros no empuje al resto fuera de la pantalla.
-    const GROUP_PREVIEW = 6;
+    // Un grupo enseña como mucho estas tarjetas antes de plegar el resto, para
+    // que una carpeta con 20 muleros no empuje al resto fuera de la pantalla.
+    const GROUP_PREVIEW = 12;
 
     const ICONS = {
         caret: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>',
@@ -38,7 +39,6 @@
         verify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
         play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.5 4.2v15.6a1 1 0 0 0 1.53.85l12.2-7.8a1 1 0 0 0 0-1.7L8.03 3.35A1 1 0 0 0 6.5 4.2z"/></svg>',
         stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
-        focus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
         eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3.2"/></svg>',
         eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 6.2A8.9 8.9 0 0 1 12 6c6.5 0 10.5 6.6 10.5 6.6a17 17 0 0 1-3.2 3.7M6.2 8A17 17 0 0 0 1.5 12.6S5.5 19 12 19a9.7 9.7 0 0 0 4-.85"/><path d="M9.9 10.5a3.2 3.2 0 0 0 4.3 4.4"/><path d="M3 3l18 18"/></svg>',
         refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5"/></svg>',
@@ -51,7 +51,7 @@
         rocket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c3.5 2 5.5 5.5 5.5 9.5L15 15H9l-2.5-2.5C6.5 8.5 8.5 5 12 3z"/><circle cx="12" cy="10" r="1.6"/><path d="M9 15l-2 4 3-1M15 15l2 4-3-1"/></svg>',
     };
 
-    // Texto del badge y de la columna Server.
+    // Texto del badge de estado y del recuadro de servidor.
     const STATUS_TEXT = {
         unknown: 'Idle',
         ready: 'Ready',
@@ -67,7 +67,7 @@
 
     let msgTimer = null;
     /** Mensaje global, en la barra inferior. Lo que afecta a UNA cuenta se ve en
-     *  su fila (badge + tooltip), no aquí. */
+     *  su tarjeta (badge + tooltip), no aquí. */
     function notice(text, kind) {
         const label = $('status-msg');
         label.textContent = text || '';
@@ -106,7 +106,7 @@
         return node;
     }
 
-    /** Botón de acción de fila: icono, sin texto. El título es la única pista,
+    /** Botón de acción de la tarjeta: icono, sin texto. El título es la única pista,
      *  así que debe decir qué hace, no cómo se llama. */
     function actionButton(icon, title, className, onClick, opts) {
         const b = el('button', 'act ' + (className || ''), ICONS[icon]);
@@ -142,16 +142,9 @@
         return state.accounts.filter((a) => (a.group || null) === groupId && matches(a));
     }
 
-    function tally(list) {
-        return {
-            running: list.filter((a) => a.status === 'running').length,
-            failed: list.filter((a) => a.status === 'failed').length,
-        };
-    }
-
     function renderCounts() {
         const total = state.accounts.length;
-        const { running } = tally(state.accounts);
+        const running = state.accounts.filter((a) => a.status === 'running').length;
         const shown = state.accounts.filter(matches).length;
         const bits = [`<b>${total}</b> accounts`];
         if (filterText) bits.push(`<b>${shown}</b> shown`);
@@ -164,8 +157,6 @@
     function render() {
         const rows = $('rows');
         rows.innerHTML = '';
-        document.body.classList.toggle('as-cards', layout === 'cards');
-        document.querySelector('.board-head').classList.toggle('hidden', layout === 'cards');
 
         const anyAccounts = state.accounts.length > 0;
         $('empty-state').classList.toggle('hidden', anyAccounts || state.groups.length > 0);
@@ -207,7 +198,7 @@
      *  en una categoría vacía, donde no hay ninguna tarjeta que sirva de
      *  referencia. */
     function dropSlot(groupId) {
-        const slot = el('div', layout === 'cards' ? 'drop-slot' : 'drop-slot-row');
+        const slot = el('div', 'drop-slot');
         slot.addEventListener('dragover', (e) => {
             if (!drag || drag.kind !== 'account') return;
             e.preventDefault();
@@ -228,43 +219,31 @@
 
     function appendAccounts(rows, list, groupId) {
         const key = groupId || '__loose__';
-        // El filtro ya reduce la lista, así que ahí no plegamos nada. En rejilla
-        // caben varias por fila, de modo que el tope antes de plegar es mayor.
-        const preview = layout === 'cards' ? GROUP_PREVIEW * 2 : GROUP_PREVIEW;
-        const cap = (filterText || expanded[key]) ? list.length : preview;
+        // El filtro ya reduce la lista, así que ahí no plegamos nada.
+        const cap = (filterText || expanded[key]) ? list.length : GROUP_PREVIEW;
         const visible = list.slice(0, cap);
 
-        if (layout === 'cards') {
-            const grid = el('div', 'card-grid');
-            for (const account of visible) grid.appendChild(accountCard(account));
-            grid.appendChild(dropSlot(groupId));
-            // El hueco sobrante de la rejilla es grande; soltar ahí debe colocar
-            // la cuenta al final de este grupo en vez de no hacer nada.
-            grid.addEventListener('dragover', (e) => {
-                if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
-                e.preventDefault();
-                pendingDrop = null;          // al final del grupo
-                const moving = document.querySelector('.dragging');
-                if (moving && moving.parentNode === grid && moving !== grid.lastElementChild) {
-                    grid.appendChild(moving);
-                }
-            });
-            grid.addEventListener('drop', (e) => {
-                if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
-                e.preventDefault();
-                clearDropMarks();
-                dropAccount(null, groupId, 'group');
-            });
-            rows.appendChild(grid);
-        } else {
-            // Las filas de un grupo van en su propio contenedor, igual que las
-            // tarjetas: así el CSS puede saber si la fila arrastrada pertenece a
-            // este grupo y ocultar su hueco.
-            const block = el('div', 'row-group');
-            for (const account of visible) block.appendChild(accountRow(account));
-            block.appendChild(dropSlot(groupId));
-            rows.appendChild(block);
-        }
+        const grid = el('div', 'card-grid');
+        for (const account of visible) grid.appendChild(accountCard(account));
+        grid.appendChild(dropSlot(groupId));
+        // El hueco sobrante de la rejilla es grande; soltar ahí debe colocar la
+        // cuenta al final de este grupo en vez de no hacer nada.
+        grid.addEventListener('dragover', (e) => {
+            if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
+            e.preventDefault();
+            pendingDrop = null;          // al final del grupo
+            const moving = document.querySelector('.dragging');
+            if (moving && moving.parentNode === grid && moving !== grid.lastElementChild) {
+                grid.appendChild(moving);
+            }
+        });
+        grid.addEventListener('drop', (e) => {
+            if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
+            e.preventDefault();
+            clearDropMarks();
+            dropAccount(null, groupId, 'group');
+        });
+        rows.appendChild(grid);
 
         const hidden = list.length - visible.length;
         if (hidden > 0) {
@@ -293,12 +272,7 @@
         const count = el('span', 'group-count');
         count.textContent = list.length;
 
-        const summary = el('div', 'group-summary');
-        const { running, failed } = tally(list);
-        if (running) { const s = el('span', 'live'); s.textContent = running + ' running'; summary.appendChild(s); }
-        if (failed) { const s = el('span', 'bad'); s.textContent = failed + ' failed'; summary.appendChild(s); }
-
-        head.append(spacer, caret, name, count, summary);
+        head.append(spacer, caret, name, count);
         head.addEventListener('click', () => { looseCollapsed = !looseCollapsed; render(); });
         return head;
     }
@@ -314,11 +288,9 @@
         const count = el('span', 'group-count');
         count.textContent = list.length;
 
-        const summary = el('div', 'group-summary');
-        const { running, failed } = tally(list);
-        if (running) { const s = el('span', 'live'); s.textContent = running + ' running'; summary.appendChild(s); }
-        if (failed) { const s = el('span', 'bad'); s.textContent = failed + ' failed'; summary.appendChild(s); }
-
+        // El estado no se resume aquí: vive en la tarjeta de cada cuenta, que es
+        // donde se puede actuar sobre él. Un contador en la cabecera repetía la
+        // misma información sin decir de quién era.
         const tools = el('div', 'group-tools');
         const launchable = list.filter((a) => a.status !== 'running'
             && a.status !== 'launching' && a.status !== 'checking');
@@ -342,9 +314,8 @@
             refresh();
         });
         tools.append(edit, remove);
-        summary.appendChild(tools);
 
-        head.append(grip, caret, name, count, summary);
+        head.append(grip, caret, name, count, tools);
         head.addEventListener('click', async () => {
             group.collapsed = !group.collapsed;
             render();
@@ -354,53 +325,8 @@
         return head;
     }
 
-    function accountRow(account) {
-        const row = el('div', 'row');
-        row.dataset.email = account.email;
-
-        // --- cuenta
-        const cell = el('div', 'account-cell');
-        const name = el('span', 'account-name' + (account.flagged ? ' struck' : ''));
-        name.textContent = account.label;
-        // El color por cuenta vuelve, pero sólo en el nombre: es el único sitio
-        // donde ayuda a distinguirlas de un vistazo sin ensuciar la fila.
-        if (account.color && !account.flagged) name.style.color = account.color;
-        const mail = el('span', 'account-mail');
-        mail.textContent = shownEmail(account);
-        cell.append(name, mail);
-
-        // --- servidor (clic para cambiar de región sin abrir el diálogo)
-        const server = el('button', 'server-cell');
-        // El texto va dentro de un span: la corrección óptica se aplica al
-        // texto, no al botón (mover el botón desplazaría también su borde).
-        const serverText = el('span');
-        serverText.textContent = SERVER_TEXT[account.region] || account.region;
-        server.appendChild(serverText);
-        server.title = 'Change region';
-        server.addEventListener('click', (e) => { e.stopPropagation(); openRegionMenu(server, account); });
-
-        // --- estado
-        const badge = el('span', 'badge ' + account.status);
-        badge.append(el('span', 'dot'));
-        const text = el('span');
-        const instance = state.running.find(
-            (i) => i.email.toLowerCase() === account.email.toLowerCase());
-        text.textContent = STATUS_TEXT[account.status] || account.status;
-        badge.appendChild(text);
-        if (account.detail) {
-            badge.dataset.tip = account.detail;
-            if (account.status === 'failed') badge.dataset.tipKind = 'error';
-        }
-        const statusCell = el('div');
-        statusCell.appendChild(badge);
-
-        row.append(cell, server, statusCell, buildActions(account));
-        wireAccountDrag(row, account, null);
-        return row;
-    }
-
-    /** Los botones de acción, iguales en tabla y en tarjetas. En la rejilla el
-     *  último se estira para llenar la fila; de ahí la clase `grow`. */
+    /** Los botones de acción de una cuenta. El último se estira para llenar el
+     *  ancho de la tarjeta; de ahí la clase `grow`. */
     function buildActions(account, opts) {
         const grow = opts && opts.grow;
         const actions = el('div', 'actions');
@@ -431,24 +357,30 @@
             }));
 
         if (account.status === 'running') {
-            actions.appendChild(actionButton('focus',
-                `Bring the game window to the front (pid ${account.pid})`, 'accent',
-                () => call('focus', account.pid)));
+            // No hay botón de "traer al frente": el launcher no toca la ventana
+            // del juego. Cerrar sí es cosa suya —lo arrancó él—, pero enumerar
+            // ventanas ajenas y robarles el foco no lo necesita nadie aquí.
             const stop = actionButton('stop', `Stop the game (pid ${account.pid})`, 'danger',
                 () => stopAccount(account));
             if (grow) stop.classList.add('grow');
             actions.appendChild(stop);
         } else {
-            const play = actionButton('play', busy ? 'Busy…' : 'Launch', 'accent',
-                busy ? null : () => launch(account), { disabled: busy });
+            // Si en este equipo no se puede lanzar (falta Wine, falta el
+            // ayudante…), el botón lo dice en lugar de fallar al pulsarlo.
+            const host = state.host || { ready: true };
+            const blocked = !host.ready;
+            const play = actionButton('play',
+                blocked ? host.detail : (busy ? 'Busy…' : 'Launch'), 'accent',
+                (busy || blocked) ? null : () => launch(account),
+                { disabled: busy || blocked });
             if (grow) play.classList.add('grow');
             actions.appendChild(play);
         }
         return actions;
     }
 
-    /** Tarjeta de cuenta para la vista en rejilla. Misma información que la fila,
-     *  apilada: identidad arriba, servidor y estado en medio, acciones abajo. */
+    /** Tarjeta de cuenta: identidad arriba, servidor y estado en medio, acciones
+     *  abajo. Es el único sitio donde se ve el estado de una cuenta. */
     function accountCard(account) {
         const card = el('div', 'card');
         card.dataset.email = account.email;
@@ -527,18 +459,14 @@
 
     /** ¿La cuenta arrastrada va DESPUÉS de la que hay debajo del cursor?
      *
-     *  En rejilla el orden fluye de izquierda a derecha, así que decide el eje X
-     *  y el indicador es una línea vertical; en la tabla, el eje Y. Marcar
-     *  arriba/abajo sobre una rejilla no dice dónde va a caer la tarjeta. */
+     *  En rejilla el orden fluye de izquierda a derecha, así que decide el eje X:
+     *  marcar arriba/abajo no diría dónde va a caer la tarjeta. */
     function dropSide(node, event) {
         const box = node.getBoundingClientRect();
-        if (layout === 'cards') {
-            return { after: event.clientX > box.left + box.width / 2 };
-        }
-        return { after: event.clientY > box.top + box.height / 2 };
+        return { after: event.clientX > box.left + box.width / 2 };
     }
 
-    /** El arrastre se arma sólo desde el grip: con la fila entera arrastrable,
+    /** El arrastre se arma sólo desde el grip: con la cabecera entera arrastrable,
      *  un clic con dos píxeles de movimiento sobre un botón inicia un arrastre
      *  en lugar de la acción. */
     function armDragFromGrip(node, grip) {
@@ -558,7 +486,7 @@
     }
 
     function wireAccountDrag(row, account, grip) {
-        // Sin grip visible, la fila se arrastra desde su zona de nombre.
+        // Sin grip visible, la tarjeta se arrastra desde cualquier punto suyo.
         row.draggable = true;
         row.addEventListener('dragstart', (e) => {
             drag = { kind: 'account', id: account.email };
@@ -567,7 +495,7 @@
             e.dataTransfer.setData('text/plain', account.email);
             // Todo cambio de aspecto va en el siguiente tick. Dentro del
             // propio dragstart, el navegador captura como imagen de arrastre
-            // una tarjeta ya vaciada, y alterar el layout —revelar las zonas de
+            // una tarjeta ya vaciada, y alterar la disposición —revelar las zonas de
             // destino lo altera— llega a cancelar la operación.
             setTimeout(() => {
                 if (!drag) return;
@@ -1032,6 +960,73 @@
         { name: 'Slate', value: '#94a3b8' },
     ];
 
+    /** Temas de club. Cada uno trae su logo y fija el acento: el color es parte
+     *  de la identidad del club, así que mientras uno esté puesto el selector
+     *  de acento queda bloqueado (el tinte NO — eso es intensidad, no color, y
+     *  sigue siendo del usuario).
+     *
+     *  `name` no se pinta al lado del logo (ver renderBrand); es el rótulo del
+     *  desplegable y el título del logo al pasar por encima. */
+    const CLUBS = {
+        'mystic-cave': { name: 'Mystic Cave', accent: '#8b5cf6',
+                         image: 'img/mystic-cave-hd.png' },
+        arsyn:         { name: 'Arsyn', accent: '#a855f7',
+                         image: 'img/arsyn.webp' },
+        sayro:         { name: 'Sayro', accent: '#b91c1c',
+                         image: 'img/sayro.webp' },
+    };
+
+    function clubOf(theme) {
+        return (theme && CLUBS[theme.club]) ? theme.club : '';
+    }
+
+    /** Marca de la barra superior: SÓLO una imagen, la del tema puesto.
+     *
+     *  Ni nombre al lado ni versión. Dos de los tres logos de club son rótulos
+     *  que ya llevan el nombre dentro, así que escribirlo aparte lo decía dos
+     *  veces en unos temas y una en otros. Quien nombra siempre la aplicación
+     *  es la barra de estado, con el mismo texto se ponga el tema que se ponga.
+     *
+     *  El logo propio va como MÁSCARA y no como <img>: así toma el color de
+     *  acento, igual que hacía el cuadrado que había antes aquí. */
+    function renderBrand(theme) {
+        const box = $('brand');
+        if (!box) return;
+        box.innerHTML = '';
+        const club = CLUBS[clubOf(theme)];
+        if (club) {
+            const logo = document.createElement('img');
+            logo.className = 'brand-logo';
+            logo.src = club.image;
+            logo.alt = club.name;
+            logo.title = club.name;
+            box.appendChild(logo);
+            return;
+        }
+        const lockup = el('span', 'brand-lockup');
+        lockup.title = APP_NAME;
+        box.appendChild(lockup);
+    }
+
+    // Huecos de la fila de acentos propios. Al llenarla, el más viejo cede el
+    // sitio: es preferible a bloquear el botón de añadir y obligar a borrar
+    // antes de poder probar un color.
+    const MAX_CUSTOMS = 8;
+
+    /** Acentos guardados: sólo hex de 6 dígitos, en minúsculas, sin repetidos y
+     *  sin los que ya están en la paleta fija (ahí ya se pueden elegir). */
+    function normalizeCustoms(list) {
+        const presets = ACCENTS.map((a) => a.value.toLowerCase());
+        const seen = [];
+        for (const raw of Array.isArray(list) ? list : []) {
+            const value = String(raw).toLowerCase();
+            if (!/^#[0-9a-f]{6}$/.test(value)) continue;
+            if (presets.includes(value) || seen.includes(value)) continue;
+            seen.push(value);
+        }
+        return seen.slice(-MAX_CUSTOMS);
+    }
+
     const FONTS = {
         system: '"Segoe UI", system-ui, -apple-system, sans-serif',
         quicksand: 'Quicksand, "Segoe UI", system-ui, sans-serif',
@@ -1063,7 +1058,15 @@
     }
 
     function applyTheme(theme) {
-        const accent = (theme && theme.accent) || '#22c55e';
+        const club = clubOf(theme);
+        // El acento propio se guarda intacto aunque el club pinte otro: al
+        // quitar el tema se vuelve a él sin haber perdido nada.
+        const own = (theme && theme.accent) || '#22c55e';
+        const accent = club ? CLUBS[club].accent : own;
+        // Un acento a medida en uso queda guardado aunque nunca se pulsara el
+        // botón de añadir: es el que hay puesto, perderlo al probar otro era
+        // justo el problema.
+        const customs = normalizeCustoms((theme && theme.customs || []).concat([own]));
         const stars = !theme || theme.stars !== false;
         const tint = (theme && typeof theme.tint === 'number') ? theme.tint : 0.45;
         const font = (theme && FONTS[theme.font]) ? theme.font : 'system';
@@ -1073,7 +1076,9 @@
         // 0.88: el botón principal pinta el acento mezclado con negro a ese %.
         document.documentElement.style.setProperty('--on-accent', readableOn(accent, 0.88));
         document.body.classList.toggle('no-stars', !stars);
-        return { accent: accent, stars: stars, tint: tint, font: font };
+        renderBrand({ club: club });
+        return { accent: own, stars: stars, tint: tint, font: font, club: club,
+                 customs: customs };
     }
 
     /** Campo de estrellas como imagen de fondo repetible.
@@ -1100,40 +1105,100 @@
             '--stars', `url("${canvas.toDataURL('image/png')}")`);
     }
 
+    /** Selector de acento en dos filas: arriba la paleta fija, abajo los colores
+     *  que ha guardado el usuario más el botón de añadir.
+     *
+     *  Elegir un color a medida lo guarda: antes vivía sólo en `accent` y se
+     *  perdía en cuanto se probaba otro. */
     function renderThemeControls() {
         const theme = state.theme || { accent: '#22c55e' };
         const box = $('theme-swatches');
-        if (!box) return;
-        box.innerHTML = '';
-        for (const preset of ACCENTS) {
+        const customBox = $('theme-customs');
+        if (!box || !customBox) return;
+        const club = clubOf(theme);
+        // Con club puesto se enseña SU color, no el guardado: lo que ve el
+        // usuario es lo que tiene la interfaz delante.
+        const accent = String(club ? CLUBS[club].accent : theme.accent).toLowerCase();
+        const customs = normalizeCustoms(theme.customs);
+        box.classList.toggle('locked', !!club);
+        customBox.classList.toggle('locked', !!club);
+        $('accent-locked-note').classList.toggle('hidden', !club);
+
+        /** Aplica un acento y lo persiste. `customs` viaja siempre en el tema,
+         *  así que un color guardado no se pierde al cambiar de acento. */
+        const pick = (value) => {
+            state.theme = applyTheme({ ...state.theme, accent: value });
+            renderThemeControls();
+            call('save_prefs', { theme: state.theme });
+        };
+
+        const swatch = (value, title) => {
             const dot = document.createElement('button');
             dot.type = 'button';
-            dot.className = 'theme-swatch'
-                + (preset.value.toLowerCase() === String(theme.accent).toLowerCase() ? ' active' : '');
-            dot.style.background = preset.value;
-            dot.title = preset.name;
-            dot.addEventListener('click', () => {
-                state.theme = { ...state.theme, accent: preset.value };
-                applyTheme(state.theme);
+            dot.className = 'theme-swatch' + (value.toLowerCase() === accent ? ' active' : '');
+            dot.style.background = value;
+            dot.title = title;
+            dot.disabled = !!club;
+            return dot;
+        };
+
+        box.innerHTML = '';
+        for (const preset of ACCENTS) {
+            const dot = swatch(preset.value, preset.name);
+            dot.addEventListener('click', () => pick(preset.value));
+            box.appendChild(dot);
+        }
+
+        customBox.innerHTML = '';
+        for (const value of customs) {
+            const dot = swatch(value, value.toUpperCase() + ' — click to use, × to forget');
+            dot.addEventListener('click', () => pick(value));
+            // La × va DENTRO del botón (un <span>, no otro botón: anidar botones
+            // no es HTML válido) y detiene la propagación para que borrar no
+            // signifique además aplicar.
+            const forget = el('span', 'swatch-x', '&times;');
+            forget.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // El acento en uso no se olvida: se guarda solo mientras esté
+                // puesto (ver applyTheme), así que la × ahí no haría nada.
+                if (club || value.toLowerCase() === accent) return;
+                state.theme = applyTheme({
+                    ...state.theme,
+                    customs: customs.filter((c) => c !== value),
+                });
                 renderThemeControls();
                 call('save_prefs', { theme: state.theme });
             });
-            box.appendChild(dot);
+            dot.appendChild(forget);
+            customBox.appendChild(dot);
         }
-        const custom = document.createElement('input');
-        custom.type = 'color';
-        custom.className = 'theme-custom';
-        custom.value = /^#[0-9a-f]{6}$/i.test(theme.accent) ? theme.accent : '#22c55e';
-        custom.title = 'Custom colour';
-        custom.addEventListener('input', () => {
-            state.theme = { ...state.theme, accent: custom.value };
-            applyTheme(state.theme);
+
+        // Botón de añadir: una casilla de puntos con un «+» y, encima e
+        // invisible, el selector nativo de color, que es quien abre el diálogo.
+        const adder = el('label', 'theme-add', '<span>+</span>');
+        adder.title = customs.length >= MAX_CUSTOMS
+            ? `Saves a new colour and forgets the oldest (${MAX_CUSTOMS} slots)`
+            : 'Save a custom colour';
+        const picker = document.createElement('input');
+        picker.type = 'color';
+        picker.value = /^#[0-9a-f]{6}$/.test(accent) ? accent : '#22c55e';
+        picker.disabled = !!club;
+        // Mientras se mueve por el diálogo se ve el resultado en vivo; sólo al
+        // aceptarlo (change) se guarda, para no llenar la fila de tanteos.
+        picker.addEventListener('input', () => {
+            applyTheme({ ...state.theme, accent: picker.value });
         });
-        custom.addEventListener('change', () => {
+        picker.addEventListener('change', () => {
+            state.theme = applyTheme({
+                ...state.theme,
+                accent: picker.value,
+                customs: customs.concat([picker.value]),
+            });
             renderThemeControls();
             call('save_prefs', { theme: state.theme });
         });
-        box.appendChild(custom);
+        adder.appendChild(picker);
+        customBox.appendChild(adder);
     }
 
     // --- panel de ajustes -------------------------------------------------
@@ -1168,6 +1233,42 @@
         }
     }
 
+    /** Lo que cambia según el sistema: los ajustes de Wine sólo existen donde
+     *  hacen falta, y el aviso sobre dónde acaban las contraseñas depende de si
+     *  hay un almacén de secretos detrás. */
+    function renderPlatform() {
+        const host = state.host || {};
+        const wine = host.kind === 'wine';
+        $('wine-section').classList.toggle('hidden', !wine);
+        if (wine) {
+            const status = $('wine-status');
+            status.textContent = host.ready
+                ? 'Ready: the game will be launched inside its prefix.'
+                : host.detail;
+            status.classList.toggle('bad', !host.ready);
+            $('wine-binary').value = state.wine_binary || '';
+            $('wine-prefix').value = state.wine_prefix || '';
+        }
+
+        const vault = state.vault || {};
+        const note = $('vault-note');
+        if (vault.available) {
+            note.innerHTML = 'Accounts themselves are always stored. This only covers the '
+                + '<em>password</em>, kept by ' + (vault.backend === 'DPAPI'
+                    ? 'Windows DPAPI, so only this Windows user on this machine can read it'
+                    : 'your desktop keyring (' + vault.backend + ')')
+                + '. Without it you must retype it once the Trion session expires (~48h), and '
+                + 'auto-relog cannot work at all — a background relaunch has no way to ask you.';
+            note.classList.remove('bad');
+        } else {
+            note.textContent = 'There is nowhere safe to keep secrets on this machine ('
+                + (vault.detail || 'no secret store') + '), so passwords will not be '
+                + 'remembered and your session will have to be signed in again on every '
+                + 'start. Nothing is ever written unencrypted.';
+            note.classList.add('bad');
+        }
+    }
+
     function renderDrawer() {
         const versions = state.versions || {};
         $('version-live').textContent = versions['live-us'] || 'not synced';
@@ -1177,9 +1278,8 @@
         $('opt-remember-password').checked = !!state.remember_password;
         $('opt-reparent').checked = !!state.reparent_glyph;
         renderFolders();
-        for (const b of document.querySelectorAll('[data-layout]')) {
-            b.classList.toggle('active', b.dataset.layout === layout);
-        }
+        renderPlatform();
+        $('theme-club').value = clubOf(state.theme);
         const font = (state.theme || {}).font || 'system';
         for (const b of document.querySelectorAll('[data-font]')) {
             b.classList.toggle('active', b.dataset.font === font);
@@ -1197,7 +1297,6 @@
         state = next;
         state.theme = applyTheme(next.theme);
         hideEmails = !!next.hide_emails;
-        layout = next.layout === 'table' ? 'table' : 'cards';
         paintEyeButton();
         render();
         renderInstallChips();
@@ -1259,7 +1358,7 @@
         if (payload.done) {
             $('progress').classList.add('hidden');
             $('bar-fill').classList.remove('indeterminate');
-            // Lo que pertenece a una cuenta ya lo cuenta su fila.
+            // Lo que pertenece a una cuenta ya lo cuenta su tarjeta.
             if (!payload.email) {
                 notice(payload.message || (payload.ok === false ? 'The operation failed.' : 'Done.'),
                        payload.ok === false ? 'error' : 'ok');
@@ -1400,6 +1499,7 @@
         wire();
         wireTooltip();
         paintIcons();
+        renderBrand(null);        // hasta que llegue el estado, la marca por defecto
         makeStarfield();
         $('opt-stars').addEventListener('change', () => {
             state.theme = { ...state.theme, stars: $('opt-stars').checked };
@@ -1416,14 +1516,18 @@
                 call('save_prefs', { theme: state.theme });
             });
         }
-        for (const b of document.querySelectorAll('[data-layout]')) {
-            b.addEventListener('click', () => {
-                layout = b.dataset.layout;
-                for (const other of document.querySelectorAll('[data-layout]')) {
-                    other.classList.toggle('active', other === b);
-                }
-                render();
-                call('save_prefs', { layout: layout });
+        $('theme-club').addEventListener('change', () => {
+            state.theme = applyTheme({ ...state.theme, club: $('theme-club').value });
+            renderThemeControls();
+            call('save_prefs', { theme: state.theme });
+        });
+        for (const id of ['wine-binary', 'wine-prefix']) {
+            // Al salir del campo, no en cada tecla: cambiar el prefijo a medio
+            // escribir dejaría al ayudante apuntando a un sitio inexistente.
+            $(id).addEventListener('change', () => {
+                const key = id.replace('-', '_');
+                state[key] = $(id).value.trim();
+                call('save_prefs', { [key]: state[key] }).then(refresh);
             });
         }
         $('theme-tint').addEventListener('input', () => {

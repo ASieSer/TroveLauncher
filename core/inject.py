@@ -25,11 +25,13 @@ direct `Trove_x64.exe -k ... -C ...` launch.
 from __future__ import annotations
 
 import ctypes
-import secrets
-import struct
 import time
 from ctypes import POINTER, byref, c_size_t, cast, sizeof, wintypes
 from pathlib import Path
+
+# El formato del blob es compartido: lo reimplementa en C el ayudante que corre
+# dentro del prefijo de Wine (native/troveinject.c).
+from .rift import RIFT_MAGIC, build_rift_buffer, rc4  # noqa: F401
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -49,8 +51,6 @@ TH32CS_SNAPPROCESS = 0x00000002
 STILL_ACTIVE = 259
 WAIT_OBJECT_0 = 0x0
 WAIT_TIMEOUT = 0x102
-
-RIFT_MAGIC = b"\x54\x46\x49\x52"  # 'TFIR' bytes == "RIFT" read as LE uint32
 
 # The map/event handles handed to the game via -k must stay open in THIS (the
 # launcher) process for as long as the game might read them. The game pulls the
@@ -245,38 +245,6 @@ def find_pid_by_name(name: str) -> int | None:
         return found
     finally:
         kernel32.CloseHandle(snap)
-
-
-# --- payload ----------------------------------------------------------------
-
-
-def rc4(key: bytes, data: bytes) -> bytes:
-    s = list(range(256))
-    j = 0
-    for i in range(256):
-        j = (j + s[i] + key[i % len(key)]) & 0xFF
-        s[i], s[j] = s[j], s[i]
-    out = bytearray(len(data))
-    i = j = 0
-    for n, b in enumerate(data):
-        i = (i + 1) & 0xFF
-        j = (j + s[i]) & 0xFF
-        s[i], s[j] = s[j], s[i]
-        out[n] = b ^ s[(s[i] + s[j]) & 0xFF]
-    return bytes(out)
-
-
-def build_rift_buffer(ticket: str, rc_key: bytes | None = None) -> bytes:
-    """rcKey(8) ++ ciphertextLen(uint32 LE) ++ RC4(magic ++ ticket ++ \\0)."""
-    lines = ticket.replace("\r", "").split("\n")
-    start = next((i for i, ln in enumerate(lines)
-                  if ln.startswith("Signature:") or ln.startswith("<?xml")), 0)
-    clean = "\n".join(lines[start:]).rstrip()
-    content = clean.encode("utf-8") + b"\x00"
-    plaintext = RIFT_MAGIC + content
-    rc_key = rc_key or secrets.token_bytes(8)
-    ct = rc4(rc_key, plaintext)
-    return rc_key + struct.pack("<I", len(ct)) + ct
 
 
 # --- launch -----------------------------------------------------------------
