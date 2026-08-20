@@ -1,4 +1,4 @@
-# Trove Launcher
+# Trove Accounts Hub
 
 Launcher propio para Trove: mantiene la instalación al día contra el CDN de
 Trion, se autentica con tus credenciales de Glyph y arranca el juego, sin
@@ -54,8 +54,16 @@ python main.py --debug
 | Fichero | Responsabilidad |
 | --- | --- |
 | `index.html` | Estructura: barra superior con la marca, barra de acciones, tablero de cuentas, barra de estado y panel de ajustes. |
+| `img/trove-accounts-hub.svg` | Logo propio: cubo isométrico y rótulo en dos líneas justificadas al mismo ancho. El texto va trazado a curvas desde la Comfortaa que ya viaja con la app, así que no depende de ninguna fuente al pintarse. Lo genera `tools/make_logo.py` (`pip install fonttools brotli`), que no hace falta para usar la aplicación. |
 | `css/app.css` | Tema oscuro plano. Un único color vivo —el acento— tiñe el fondo entero en un porcentaje bajo y marca la acción principal y los estados activos. |
 | `js/app.js` | Todo el comportamiento: pintado del tablero, arrastrar y soltar, diálogos, preferencias y eventos que llegan del backend. |
+
+**La barra superior enseña sólo una imagen**: el logo del tema puesto, sin
+nombre al lado. Dos de los tres logos de club son rótulos que ya llevan el
+nombre dentro, así que escribirlo aparte lo decía dos veces en unos temas y una
+en otros. Quien nombra la aplicación es la barra de estado, abajo a la
+izquierda, con el mismo texto se ponga el tema que se ponga. El logo propio va
+como máscara CSS, no como imagen, para que tome el color de acento.
 
 Las cuentas se pintan siempre como tarjetas, agrupadas por categorías que se
 pliegan y se reordenan arrastrando. **El estado de una cuenta vive en su
@@ -70,9 +78,9 @@ Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
 `prefs.json`:
 
 - **Font** — tipografía de toda la interfaz: del sistema, Quicksand o Comfortaa.
-- **Club theme** — `Mystic Cave`, `Arsyn`, `Sayro` o ninguno. Un club cambia la
-  marca de la barra superior por su logo (`web/img/`) y su nombre, y **fija el
-  acento** a su color: morado en Mystic Cave y Arsyn, rojo oscuro en Sayro.
+- **Club theme** — `Mystic Cave`, `Arsyn`, `Sayro` o ninguno. Un club cambia el
+  logo de la barra superior por el suyo (`web/img/`) y **fija el acento** a su
+  color: morado en Mystic Cave y Arsyn, rojo oscuro en Sayro.
   Mientras haya club puesto, el selector de acento se ve pero no se toca.
   Quitarlo devuelve el color que hubiera elegido el usuario, que se guarda
   intacto todo el tiempo.
@@ -118,7 +126,11 @@ el juego directamente.
 
 ### Almacenamiento
 
-Todo va a `%APPDATA%/TroveLauncher`:
+Todo va a `%APPDATA%/TroveLauncher` — la carpeta **no** se renombra con la
+aplicación: cambiarla dejaría huérfanas las cuentas y los tickets de quien ya la
+tenga. Por lo mismo, la entropía DPAPI de las contraseñas guardadas
+(`TroveLauncher.credentials.v1`) es un identificador fijo, no un nombre para
+lucir: tocarlo haría indescifrables las contraseñas ya guardadas.
 
 - `prefs.json` — preferencias, cuentas y alias
 - `auth-<hash>.bin` — ticket por cuenta, cifrado con DPAPI

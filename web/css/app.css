@@ -1,7 +1,7 @@
 @import url("../fonts/quicksand.css");
 @import url("../fonts/comfortaa.css");
 
-/* Trove Launcher — tema oscuro plano, sobrio, de aire técnico.
+/* Trove Accounts Hub — tema oscuro plano, sobrio, de aire técnico.
  *
  * Reglas del diseño:
  *
@@ -131,28 +131,32 @@ body > * { position: relative; z-index: 1; }
     border-bottom: 1px solid var(--line);
     background: var(--surface-a);
 }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand { display: flex; align-items: center; min-width: 0; }
 
-/* Marca por defecto: un cuadrado del color de acento. Los temas de club la
-   sustituyen por su logo (.brand-logo), que ya viene con su propio color. */
-.brand-mark {
-    width: 15px;
-    height: 15px;
-    border-radius: 4px;
-    background: var(--accent);
+/* Logo propio: el PNG/SVG va como MÁSCARA, no como imagen, para que lo que se
+   vea sea el fondo —el acento— y el logo se retiña con el resto de la interfaz
+   (mismo recurso que usa el botón de lanzar todo el grupo). La proporción sale
+   del viewBox del SVG, así que basta con fijar el alto. */
+.brand-lockup {
+    display: block;
+    height: 26px;
+    aspect-ratio: 118.89 / 26.2;
     flex: none;
+    background: var(--accent);
+    -webkit-mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
+    mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
 }
-/* El logo del club se escala por alto y respeta su proporción: los tres tienen
-   relaciones muy distintas (un rótulo apaisado, un retrato casi cuadrado). */
+/* El logo de un club es arte suyo y va a todo color: se escala por alto y
+   respeta su proporción, que en los tres es muy distinta (dos rótulos
+   apaisados, un retrato casi cuadrado). */
 .brand-logo {
     display: block;
     height: 30px;
     width: auto;
-    max-width: 190px;
+    max-width: 200px;
     object-fit: contain;
     flex: none;
 }
-.brand-name { font-weight: 600; font-size: 13px; white-space: nowrap; }
 
 /* --- barra de acciones --------------------------------------------------- */
 
@@ -464,8 +468,12 @@ body > * { position: relative; z-index: 1; }
     color: var(--text-faint);
 }
 .statusbar .left, .statusbar .right { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.statusbar .app-version { font-family: var(--font); color: var(--text-faint);
-                          text-transform: none; letter-spacing: .6px; flex: none; }
+/* La aplicación se nombra aquí, no arriba: con un tema de club la barra
+   superior enseña el logo del club y en ningún otro sitio diría cómo se llama
+   esto. */
+.statusbar .app-name { font-family: var(--font); color: var(--text-faint);
+                       text-transform: none; letter-spacing: .3px; flex: none; }
+.statusbar .app-name b { font-weight: 600; color: var(--text-dim); }
 .statusbar .msg { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11.5px;
                   color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .statusbar .msg.error { color: var(--danger); }

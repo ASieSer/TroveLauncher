@@ -17,7 +17,7 @@ from api import Api
 from core.paths import base_dir
 from core.service import LauncherService
 
-APP_TITLE = "Trove Launcher"
+APP_TITLE = "Trove Accounts Hub"
 # Tamaño deseado en píxeles CSS: lo que la hoja de estilo da por supuesto. En
 # pantalla se multiplica por la escala del monitor (ver _enable_dpi_awareness).
 WINDOW_SIZE = (1060, 760)

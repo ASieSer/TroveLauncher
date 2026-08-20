@@ -1,4 +1,4 @@
-/* Trove Launcher — pantalla de cuentas.
+/* Trove Accounts Hub — pantalla de cuentas.
  *
  * JS -> Python: window.pywebview.api.<método>(...) devuelve una promesa. Toda
  * respuesta trae {ok: bool} y, si ok es false, un "error" ya legible.
@@ -12,6 +12,8 @@
 
 (function () {
     'use strict';
+
+    const APP_NAME = 'Trove Accounts Hub';
 
     const $ = (id) => document.getElementById(id);
     const api = () => (window.pywebview && window.pywebview.api) || null;
@@ -952,30 +954,35 @@
         { name: 'Slate', value: '#94a3b8' },
     ];
 
-    /** Temas de club. Cada uno trae su rótulo y fija el acento: el color es
-     *  parte de la identidad del club, así que mientras uno esté puesto el
-     *  selector de acento queda bloqueado (el tinte NO — eso es intensidad, no
-     *  color, y sigue siendo del usuario).
+    /** Temas de club. Cada uno trae su logo y fija el acento: el color es parte
+     *  de la identidad del club, así que mientras uno esté puesto el selector
+     *  de acento queda bloqueado (el tinte NO — eso es intensidad, no color, y
+     *  sigue siendo del usuario).
      *
-     *  `wordmark` dice si la imagen ya lleva el nombre dentro. Mystic Cave y
-     *  Arsyn son rótulos; Sayro es un retrato, y ahí el nombre se escribe al
-     *  lado o no aparecería por ninguna parte. */
+     *  `name` no se pinta al lado del logo (ver renderBrand); es el rótulo del
+     *  desplegable y el título del logo al pasar por encima. */
     const CLUBS = {
         'mystic-cave': { name: 'Mystic Cave', accent: '#8b5cf6',
-                         image: 'img/mystic-cave-hd.png', wordmark: true },
+                         image: 'img/mystic-cave-hd.png' },
         arsyn:         { name: 'Arsyn', accent: '#a855f7',
-                         image: 'img/arsyn.webp', wordmark: true },
+                         image: 'img/arsyn.webp' },
         sayro:         { name: 'Sayro', accent: '#b91c1c',
-                         image: 'img/sayro.webp', wordmark: false },
+                         image: 'img/sayro.webp' },
     };
 
     function clubOf(theme) {
         return (theme && CLUBS[theme.club]) ? theme.club : '';
     }
 
-    /** Marca de la barra superior: el cuadrado de acento y «Trove Launcher», o
-     *  el logo del club y su nombre. La versión ya no vive aquí — está abajo a
-     *  la izquierda, en la barra de estado. */
+    /** Marca de la barra superior: SÓLO una imagen, la del tema puesto.
+     *
+     *  Ni nombre al lado ni versión. Dos de los tres logos de club son rótulos
+     *  que ya llevan el nombre dentro, así que escribirlo aparte lo decía dos
+     *  veces en unos temas y una en otros. Quien nombra siempre la aplicación
+     *  es la barra de estado, con el mismo texto se ponga el tema que se ponga.
+     *
+     *  El logo propio va como MÁSCARA y no como <img>: así toma el color de
+     *  acento, igual que hacía el cuadrado que había antes aquí. */
     function renderBrand(theme) {
         const box = $('brand');
         if (!box) return;
@@ -986,19 +993,13 @@
             logo.className = 'brand-logo';
             logo.src = club.image;
             logo.alt = club.name;
+            logo.title = club.name;
             box.appendChild(logo);
-            // Con un rótulo, repetir el nombre al lado sería decirlo dos veces.
-            if (!club.wordmark) {
-                const name = el('span', 'brand-name');
-                name.textContent = club.name;
-                box.appendChild(name);
-            }
             return;
         }
-        box.appendChild(el('span', 'brand-mark'));
-        const name = el('span', 'brand-name');
-        name.textContent = 'Trove Launcher';
-        box.appendChild(name);
+        const lockup = el('span', 'brand-lockup');
+        lockup.title = APP_NAME;
+        box.appendChild(lockup);
     }
 
     // Huecos de la fila de acentos propios. Al llenarla, el más viejo cede el
