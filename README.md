@@ -49,6 +49,39 @@ python main.py --debug
 | `prefs.py` | Preferencias, cuentas y contraseñas cifradas con DPAPI. |
 | `service.py` | Orquestador: hilo de trabajo, 2FA, auto-relog y progreso. |
 
+### Interfaz (`web/`)
+
+| Fichero | Responsabilidad |
+| --- | --- |
+| `index.html` | Estructura: barra superior con la marca, barra de acciones, tablero de cuentas, barra de estado y panel de ajustes. |
+| `css/app.css` | Tema oscuro plano. Un único color vivo —el acento— tiñe el fondo entero en un porcentaje bajo y marca la acción principal y los estados activos. |
+| `js/app.js` | Todo el comportamiento: pintado del tablero, arrastrar y soltar, diálogos, preferencias y eventos que llegan del backend. |
+
+Las cuentas se pintan siempre como tarjetas, agrupadas por categorías que se
+pliegan y se reordenan arrastrando. **El estado de una cuenta vive en su
+tarjeta y en ningún otro sitio**: la cabecera de un grupo no lo resume, porque
+repetir «2 running» ahí no dice de quién es ni deja actuar sobre ello. Lo único
+global es el recuento del encabezado y los mensajes de operación de la barra
+inferior, donde también está la versión.
+
+#### Apariencia
+
+Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
+`prefs.json`:
+
+- **Font** — tipografía de toda la interfaz: del sistema, Quicksand o Comfortaa.
+- **Club theme** — `Mystic Cave`, `Arsyn`, `Sayro` o ninguno. Un club cambia la
+  marca de la barra superior por su logo (`web/img/`) y su nombre, y **fija el
+  acento** a su color: morado en Mystic Cave y Arsyn, rojo oscuro en Sayro.
+  Mientras haya club puesto, el selector de acento se ve pero no se toca.
+  Quitarlo devuelve el color que hubiera elegido el usuario, que se guarda
+  intacto todo el tiempo.
+- **Accent** — el color propio, de una paleta o a medida.
+- **Tint strength** — cuánto acento llega al fondo. **No lo bloquea ningún
+  tema**: es intensidad, no color, y sigue siendo del usuario aunque el club
+  mande en el acento. A 0% la interfaz queda gris neutra.
+- **Background particles** — el campo de estrellas del fondo.
+
 ### Detalles que conviene no romper
 
 **El hash del manifiesto no es recalculable.** Es un token opaco de "¿ha
@@ -88,5 +121,6 @@ sencillamente no se recuerdan.
 
 ## Estado
 
-Interfaz provisional, pensada para cubrir toda la funcionalidad y validarla. El
-diseño se trabaja después.
+Funcionalidad completa y en uso. La interfaz ya no es un borrador, pero sigue
+moviéndose: lo que se toca son colores, densidad y rótulos, no lo que hay
+debajo.

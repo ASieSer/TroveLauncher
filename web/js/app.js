@@ -24,11 +24,10 @@
     let modalCleanup = null;
     let expanded = {};            // grupos con el "+N more" desplegado
     let looseCollapsed = false;   // ¿está plegada la sección «Ungrouped»?
-    let layout = 'cards';         // 'cards' (rejilla) | 'table' (filas)
 
-    // Un grupo enseña como mucho estas filas antes de plegar el resto, para que
-    // una carpeta con 20 muleros no empuje al resto fuera de la pantalla.
-    const GROUP_PREVIEW = 6;
+    // Un grupo enseña como mucho estas tarjetas antes de plegar el resto, para
+    // que una carpeta con 20 muleros no empuje al resto fuera de la pantalla.
+    const GROUP_PREVIEW = 12;
 
     const ICONS = {
         caret: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>',
@@ -51,7 +50,7 @@
         rocket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c3.5 2 5.5 5.5 5.5 9.5L15 15H9l-2.5-2.5C6.5 8.5 8.5 5 12 3z"/><circle cx="12" cy="10" r="1.6"/><path d="M9 15l-2 4 3-1M15 15l2 4-3-1"/></svg>',
     };
 
-    // Texto del badge y de la columna Server.
+    // Texto del badge de estado y del recuadro de servidor.
     const STATUS_TEXT = {
         unknown: 'Idle',
         ready: 'Ready',
@@ -67,7 +66,7 @@
 
     let msgTimer = null;
     /** Mensaje global, en la barra inferior. Lo que afecta a UNA cuenta se ve en
-     *  su fila (badge + tooltip), no aquí. */
+     *  su tarjeta (badge + tooltip), no aquí. */
     function notice(text, kind) {
         const label = $('status-msg');
         label.textContent = text || '';
@@ -106,7 +105,7 @@
         return node;
     }
 
-    /** Botón de acción de fila: icono, sin texto. El título es la única pista,
+    /** Botón de acción de la tarjeta: icono, sin texto. El título es la única pista,
      *  así que debe decir qué hace, no cómo se llama. */
     function actionButton(icon, title, className, onClick, opts) {
         const b = el('button', 'act ' + (className || ''), ICONS[icon]);
@@ -142,16 +141,9 @@
         return state.accounts.filter((a) => (a.group || null) === groupId && matches(a));
     }
 
-    function tally(list) {
-        return {
-            running: list.filter((a) => a.status === 'running').length,
-            failed: list.filter((a) => a.status === 'failed').length,
-        };
-    }
-
     function renderCounts() {
         const total = state.accounts.length;
-        const { running } = tally(state.accounts);
+        const running = state.accounts.filter((a) => a.status === 'running').length;
         const shown = state.accounts.filter(matches).length;
         const bits = [`<b>${total}</b> accounts`];
         if (filterText) bits.push(`<b>${shown}</b> shown`);
@@ -164,8 +156,6 @@
     function render() {
         const rows = $('rows');
         rows.innerHTML = '';
-        document.body.classList.toggle('as-cards', layout === 'cards');
-        document.querySelector('.board-head').classList.toggle('hidden', layout === 'cards');
 
         const anyAccounts = state.accounts.length > 0;
         $('empty-state').classList.toggle('hidden', anyAccounts || state.groups.length > 0);
@@ -207,7 +197,7 @@
      *  en una categoría vacía, donde no hay ninguna tarjeta que sirva de
      *  referencia. */
     function dropSlot(groupId) {
-        const slot = el('div', layout === 'cards' ? 'drop-slot' : 'drop-slot-row');
+        const slot = el('div', 'drop-slot');
         slot.addEventListener('dragover', (e) => {
             if (!drag || drag.kind !== 'account') return;
             e.preventDefault();
@@ -228,43 +218,31 @@
 
     function appendAccounts(rows, list, groupId) {
         const key = groupId || '__loose__';
-        // El filtro ya reduce la lista, así que ahí no plegamos nada. En rejilla
-        // caben varias por fila, de modo que el tope antes de plegar es mayor.
-        const preview = layout === 'cards' ? GROUP_PREVIEW * 2 : GROUP_PREVIEW;
-        const cap = (filterText || expanded[key]) ? list.length : preview;
+        // El filtro ya reduce la lista, así que ahí no plegamos nada.
+        const cap = (filterText || expanded[key]) ? list.length : GROUP_PREVIEW;
         const visible = list.slice(0, cap);
 
-        if (layout === 'cards') {
-            const grid = el('div', 'card-grid');
-            for (const account of visible) grid.appendChild(accountCard(account));
-            grid.appendChild(dropSlot(groupId));
-            // El hueco sobrante de la rejilla es grande; soltar ahí debe colocar
-            // la cuenta al final de este grupo en vez de no hacer nada.
-            grid.addEventListener('dragover', (e) => {
-                if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
-                e.preventDefault();
-                pendingDrop = null;          // al final del grupo
-                const moving = document.querySelector('.dragging');
-                if (moving && moving.parentNode === grid && moving !== grid.lastElementChild) {
-                    grid.appendChild(moving);
-                }
-            });
-            grid.addEventListener('drop', (e) => {
-                if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
-                e.preventDefault();
-                clearDropMarks();
-                dropAccount(null, groupId, 'group');
-            });
-            rows.appendChild(grid);
-        } else {
-            // Las filas de un grupo van en su propio contenedor, igual que las
-            // tarjetas: así el CSS puede saber si la fila arrastrada pertenece a
-            // este grupo y ocultar su hueco.
-            const block = el('div', 'row-group');
-            for (const account of visible) block.appendChild(accountRow(account));
-            block.appendChild(dropSlot(groupId));
-            rows.appendChild(block);
-        }
+        const grid = el('div', 'card-grid');
+        for (const account of visible) grid.appendChild(accountCard(account));
+        grid.appendChild(dropSlot(groupId));
+        // El hueco sobrante de la rejilla es grande; soltar ahí debe colocar la
+        // cuenta al final de este grupo en vez de no hacer nada.
+        grid.addEventListener('dragover', (e) => {
+            if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
+            e.preventDefault();
+            pendingDrop = null;          // al final del grupo
+            const moving = document.querySelector('.dragging');
+            if (moving && moving.parentNode === grid && moving !== grid.lastElementChild) {
+                grid.appendChild(moving);
+            }
+        });
+        grid.addEventListener('drop', (e) => {
+            if (!drag || drag.kind !== 'account' || e.target.closest('.card')) return;
+            e.preventDefault();
+            clearDropMarks();
+            dropAccount(null, groupId, 'group');
+        });
+        rows.appendChild(grid);
 
         const hidden = list.length - visible.length;
         if (hidden > 0) {
@@ -293,12 +271,7 @@
         const count = el('span', 'group-count');
         count.textContent = list.length;
 
-        const summary = el('div', 'group-summary');
-        const { running, failed } = tally(list);
-        if (running) { const s = el('span', 'live'); s.textContent = running + ' running'; summary.appendChild(s); }
-        if (failed) { const s = el('span', 'bad'); s.textContent = failed + ' failed'; summary.appendChild(s); }
-
-        head.append(spacer, caret, name, count, summary);
+        head.append(spacer, caret, name, count);
         head.addEventListener('click', () => { looseCollapsed = !looseCollapsed; render(); });
         return head;
     }
@@ -314,11 +287,9 @@
         const count = el('span', 'group-count');
         count.textContent = list.length;
 
-        const summary = el('div', 'group-summary');
-        const { running, failed } = tally(list);
-        if (running) { const s = el('span', 'live'); s.textContent = running + ' running'; summary.appendChild(s); }
-        if (failed) { const s = el('span', 'bad'); s.textContent = failed + ' failed'; summary.appendChild(s); }
-
+        // El estado no se resume aquí: vive en la tarjeta de cada cuenta, que es
+        // donde se puede actuar sobre él. Un contador en la cabecera repetía la
+        // misma información sin decir de quién era.
         const tools = el('div', 'group-tools');
         const launchable = list.filter((a) => a.status !== 'running'
             && a.status !== 'launching' && a.status !== 'checking');
@@ -342,9 +313,8 @@
             refresh();
         });
         tools.append(edit, remove);
-        summary.appendChild(tools);
 
-        head.append(grip, caret, name, count, summary);
+        head.append(grip, caret, name, count, tools);
         head.addEventListener('click', async () => {
             group.collapsed = !group.collapsed;
             render();
@@ -354,53 +324,8 @@
         return head;
     }
 
-    function accountRow(account) {
-        const row = el('div', 'row');
-        row.dataset.email = account.email;
-
-        // --- cuenta
-        const cell = el('div', 'account-cell');
-        const name = el('span', 'account-name' + (account.flagged ? ' struck' : ''));
-        name.textContent = account.label;
-        // El color por cuenta vuelve, pero sólo en el nombre: es el único sitio
-        // donde ayuda a distinguirlas de un vistazo sin ensuciar la fila.
-        if (account.color && !account.flagged) name.style.color = account.color;
-        const mail = el('span', 'account-mail');
-        mail.textContent = shownEmail(account);
-        cell.append(name, mail);
-
-        // --- servidor (clic para cambiar de región sin abrir el diálogo)
-        const server = el('button', 'server-cell');
-        // El texto va dentro de un span: la corrección óptica se aplica al
-        // texto, no al botón (mover el botón desplazaría también su borde).
-        const serverText = el('span');
-        serverText.textContent = SERVER_TEXT[account.region] || account.region;
-        server.appendChild(serverText);
-        server.title = 'Change region';
-        server.addEventListener('click', (e) => { e.stopPropagation(); openRegionMenu(server, account); });
-
-        // --- estado
-        const badge = el('span', 'badge ' + account.status);
-        badge.append(el('span', 'dot'));
-        const text = el('span');
-        const instance = state.running.find(
-            (i) => i.email.toLowerCase() === account.email.toLowerCase());
-        text.textContent = STATUS_TEXT[account.status] || account.status;
-        badge.appendChild(text);
-        if (account.detail) {
-            badge.dataset.tip = account.detail;
-            if (account.status === 'failed') badge.dataset.tipKind = 'error';
-        }
-        const statusCell = el('div');
-        statusCell.appendChild(badge);
-
-        row.append(cell, server, statusCell, buildActions(account));
-        wireAccountDrag(row, account, null);
-        return row;
-    }
-
-    /** Los botones de acción, iguales en tabla y en tarjetas. En la rejilla el
-     *  último se estira para llenar la fila; de ahí la clase `grow`. */
+    /** Los botones de acción de una cuenta. El último se estira para llenar el
+     *  ancho de la tarjeta; de ahí la clase `grow`. */
     function buildActions(account, opts) {
         const grow = opts && opts.grow;
         const actions = el('div', 'actions');
@@ -447,8 +372,8 @@
         return actions;
     }
 
-    /** Tarjeta de cuenta para la vista en rejilla. Misma información que la fila,
-     *  apilada: identidad arriba, servidor y estado en medio, acciones abajo. */
+    /** Tarjeta de cuenta: identidad arriba, servidor y estado en medio, acciones
+     *  abajo. Es el único sitio donde se ve el estado de una cuenta. */
     function accountCard(account) {
         const card = el('div', 'card');
         card.dataset.email = account.email;
@@ -527,18 +452,14 @@
 
     /** ¿La cuenta arrastrada va DESPUÉS de la que hay debajo del cursor?
      *
-     *  En rejilla el orden fluye de izquierda a derecha, así que decide el eje X
-     *  y el indicador es una línea vertical; en la tabla, el eje Y. Marcar
-     *  arriba/abajo sobre una rejilla no dice dónde va a caer la tarjeta. */
+     *  En rejilla el orden fluye de izquierda a derecha, así que decide el eje X:
+     *  marcar arriba/abajo no diría dónde va a caer la tarjeta. */
     function dropSide(node, event) {
         const box = node.getBoundingClientRect();
-        if (layout === 'cards') {
-            return { after: event.clientX > box.left + box.width / 2 };
-        }
-        return { after: event.clientY > box.top + box.height / 2 };
+        return { after: event.clientX > box.left + box.width / 2 };
     }
 
-    /** El arrastre se arma sólo desde el grip: con la fila entera arrastrable,
+    /** El arrastre se arma sólo desde el grip: con la cabecera entera arrastrable,
      *  un clic con dos píxeles de movimiento sobre un botón inicia un arrastre
      *  en lugar de la acción. */
     function armDragFromGrip(node, grip) {
@@ -558,7 +479,7 @@
     }
 
     function wireAccountDrag(row, account, grip) {
-        // Sin grip visible, la fila se arrastra desde su zona de nombre.
+        // Sin grip visible, la tarjeta se arrastra desde cualquier punto suyo.
         row.draggable = true;
         row.addEventListener('dragstart', (e) => {
             drag = { kind: 'account', id: account.email };
@@ -567,7 +488,7 @@
             e.dataTransfer.setData('text/plain', account.email);
             // Todo cambio de aspecto va en el siguiente tick. Dentro del
             // propio dragstart, el navegador captura como imagen de arrastre
-            // una tarjeta ya vaciada, y alterar el layout —revelar las zonas de
+            // una tarjeta ya vaciada, y alterar la disposición —revelar las zonas de
             // destino lo altera— llega a cancelar la operación.
             setTimeout(() => {
                 if (!drag) return;
@@ -1032,6 +953,55 @@
         { name: 'Slate', value: '#94a3b8' },
     ];
 
+    /** Temas de club. Cada uno trae su rótulo y fija el acento: el color es
+     *  parte de la identidad del club, así que mientras uno esté puesto el
+     *  selector de acento queda bloqueado (el tinte NO — eso es intensidad, no
+     *  color, y sigue siendo del usuario).
+     *
+     *  `wordmark` dice si la imagen ya lleva el nombre dentro. Mystic Cave y
+     *  Arsyn son rótulos; Sayro es un retrato, y ahí el nombre se escribe al
+     *  lado o no aparecería por ninguna parte. */
+    const CLUBS = {
+        'mystic-cave': { name: 'Mystic Cave', accent: '#8b5cf6',
+                         image: 'img/mystic-cave-hd.png', wordmark: true },
+        arsyn:         { name: 'Arsyn', accent: '#a855f7',
+                         image: 'img/arsyn.webp', wordmark: true },
+        sayro:         { name: 'Sayro', accent: '#b91c1c',
+                         image: 'img/sayro.webp', wordmark: false },
+    };
+
+    function clubOf(theme) {
+        return (theme && CLUBS[theme.club]) ? theme.club : '';
+    }
+
+    /** Marca de la barra superior: el cuadrado de acento y «Trove Launcher», o
+     *  el logo del club y su nombre. La versión ya no vive aquí — está abajo a
+     *  la izquierda, en la barra de estado. */
+    function renderBrand(theme) {
+        const box = $('brand');
+        if (!box) return;
+        box.innerHTML = '';
+        const club = CLUBS[clubOf(theme)];
+        if (club) {
+            const logo = document.createElement('img');
+            logo.className = 'brand-logo';
+            logo.src = club.image;
+            logo.alt = club.name;
+            box.appendChild(logo);
+            // Con un rótulo, repetir el nombre al lado sería decirlo dos veces.
+            if (!club.wordmark) {
+                const name = el('span', 'brand-name');
+                name.textContent = club.name;
+                box.appendChild(name);
+            }
+            return;
+        }
+        box.appendChild(el('span', 'brand-mark'));
+        const name = el('span', 'brand-name');
+        name.textContent = 'Trove Launcher';
+        box.appendChild(name);
+    }
+
     const FONTS = {
         system: '"Segoe UI", system-ui, -apple-system, sans-serif',
         quicksand: 'Quicksand, "Segoe UI", system-ui, sans-serif',
@@ -1063,7 +1033,11 @@
     }
 
     function applyTheme(theme) {
-        const accent = (theme && theme.accent) || '#22c55e';
+        const club = clubOf(theme);
+        // El acento propio se guarda intacto aunque el club pinte otro: al
+        // quitar el tema se vuelve a él sin haber perdido nada.
+        const own = (theme && theme.accent) || '#22c55e';
+        const accent = club ? CLUBS[club].accent : own;
         const stars = !theme || theme.stars !== false;
         const tint = (theme && typeof theme.tint === 'number') ? theme.tint : 0.45;
         const font = (theme && FONTS[theme.font]) ? theme.font : 'system';
@@ -1073,7 +1047,8 @@
         // 0.88: el botón principal pinta el acento mezclado con negro a ese %.
         document.documentElement.style.setProperty('--on-accent', readableOn(accent, 0.88));
         document.body.classList.toggle('no-stars', !stars);
-        return { accent: accent, stars: stars, tint: tint, font: font };
+        renderBrand({ club: club });
+        return { accent: own, stars: stars, tint: tint, font: font, club: club };
     }
 
     /** Campo de estrellas como imagen de fondo repetible.
@@ -1104,14 +1079,21 @@
         const theme = state.theme || { accent: '#22c55e' };
         const box = $('theme-swatches');
         if (!box) return;
+        const club = clubOf(theme);
+        // Con club puesto se enseña SU color, no el guardado: lo que ve el
+        // usuario es lo que tiene la interfaz delante.
+        const accent = club ? CLUBS[club].accent : theme.accent;
+        box.classList.toggle('locked', !!club);
+        $('accent-locked-note').classList.toggle('hidden', !club);
         box.innerHTML = '';
         for (const preset of ACCENTS) {
             const dot = document.createElement('button');
             dot.type = 'button';
             dot.className = 'theme-swatch'
-                + (preset.value.toLowerCase() === String(theme.accent).toLowerCase() ? ' active' : '');
+                + (preset.value.toLowerCase() === String(accent).toLowerCase() ? ' active' : '');
             dot.style.background = preset.value;
             dot.title = preset.name;
+            dot.disabled = !!club;
             dot.addEventListener('click', () => {
                 state.theme = { ...state.theme, accent: preset.value };
                 applyTheme(state.theme);
@@ -1123,8 +1105,9 @@
         const custom = document.createElement('input');
         custom.type = 'color';
         custom.className = 'theme-custom';
-        custom.value = /^#[0-9a-f]{6}$/i.test(theme.accent) ? theme.accent : '#22c55e';
+        custom.value = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#22c55e';
         custom.title = 'Custom colour';
+        custom.disabled = !!club;
         custom.addEventListener('input', () => {
             state.theme = { ...state.theme, accent: custom.value };
             applyTheme(state.theme);
@@ -1177,9 +1160,7 @@
         $('opt-remember-password').checked = !!state.remember_password;
         $('opt-reparent').checked = !!state.reparent_glyph;
         renderFolders();
-        for (const b of document.querySelectorAll('[data-layout]')) {
-            b.classList.toggle('active', b.dataset.layout === layout);
-        }
+        $('theme-club').value = clubOf(state.theme);
         const font = (state.theme || {}).font || 'system';
         for (const b of document.querySelectorAll('[data-font]')) {
             b.classList.toggle('active', b.dataset.font === font);
@@ -1197,7 +1178,6 @@
         state = next;
         state.theme = applyTheme(next.theme);
         hideEmails = !!next.hide_emails;
-        layout = next.layout === 'table' ? 'table' : 'cards';
         paintEyeButton();
         render();
         renderInstallChips();
@@ -1259,7 +1239,7 @@
         if (payload.done) {
             $('progress').classList.add('hidden');
             $('bar-fill').classList.remove('indeterminate');
-            // Lo que pertenece a una cuenta ya lo cuenta su fila.
+            // Lo que pertenece a una cuenta ya lo cuenta su tarjeta.
             if (!payload.email) {
                 notice(payload.message || (payload.ok === false ? 'The operation failed.' : 'Done.'),
                        payload.ok === false ? 'error' : 'ok');
@@ -1400,6 +1380,7 @@
         wire();
         wireTooltip();
         paintIcons();
+        renderBrand(null);        // hasta que llegue el estado, la marca por defecto
         makeStarfield();
         $('opt-stars').addEventListener('change', () => {
             state.theme = { ...state.theme, stars: $('opt-stars').checked };
@@ -1416,16 +1397,11 @@
                 call('save_prefs', { theme: state.theme });
             });
         }
-        for (const b of document.querySelectorAll('[data-layout]')) {
-            b.addEventListener('click', () => {
-                layout = b.dataset.layout;
-                for (const other of document.querySelectorAll('[data-layout]')) {
-                    other.classList.toggle('active', other === b);
-                }
-                render();
-                call('save_prefs', { layout: layout });
-            });
-        }
+        $('theme-club').addEventListener('change', () => {
+            state.theme = applyTheme({ ...state.theme, club: $('theme-club').value });
+            renderThemeControls();
+            call('save_prefs', { theme: state.theme });
+        });
         $('theme-tint').addEventListener('input', () => {
             const value = parseFloat($('theme-tint').value);
             state.theme = { ...state.theme, tint: value };

@@ -9,9 +9,7 @@
 <body>
 
 <header class="appbar">
-    <span class="brand-mark"></span>
-    <span class="brand-name">Trove Launcher</span>
-    <span class="brand-version">v0.1</span>
+    <span class="brand" id="brand"></span>
     <div class="appbar-right">
         <button id="install-live" class="install-chip" title="Live installation"></button>
         <button id="install-pts" class="install-chip hidden" title="PTS installation"></button>
@@ -38,12 +36,6 @@
 </div>
 
 <main class="board">
-    <div class="board-head">
-        <span>Account</span>
-        <span>Server</span>
-        <span>Status</span>
-        <span class="col-actions">Actions</span>
-    </div>
     <div id="rows" class="board-body"></div>
     <div id="empty-state" class="empty hidden">
         <p>No accounts yet.</p>
@@ -53,6 +45,7 @@
 
 <footer class="statusbar">
     <div class="left">
+        <span class="app-version">v0.1</span>
         <span id="sweep"></span>
         <div id="progress" class="hidden" style="display:flex;align-items:center;gap:10px">
             <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
@@ -81,11 +74,13 @@
                 </div>
             </div>
             <div class="field">
-                <label>Account layout</label>
-                <div class="segmented">
-                    <button data-layout="cards">Cards</button>
-                    <button data-layout="table">Table</button>
-                </div>
+                <label for="theme-club">Club theme</label>
+                <select id="theme-club">
+                    <option value="">None</option>
+                    <option value="mystic-cave">Mystic Cave</option>
+                    <option value="arsyn">Arsyn</option>
+                    <option value="sayro">Sayro</option>
+                </select>
             </div>
             <label class="check">
                 <input type="checkbox" id="opt-stars">
@@ -93,13 +88,16 @@
             </label>
             <div class="field"><label>Accent</label>
             <div class="theme-swatches" id="theme-swatches"></div></div>
+            <p class="note hidden" id="accent-locked-note">The club theme sets the accent. Pick
+                <em>None</em> to choose your own colour again.</p>
             <div class="field">
                 <label>Tint strength — <span id="tint-value"></span></label>
                 <input type="range" id="theme-tint" min="0" max="1" step="0.05">
             </div>
-            <p class="note">The accent tints every surface and marks the primary action and live
-                states. Tint strength controls how much colour reaches the background: at 0% the
-                interface is neutral grey.</p>
+            <p class="note">A club theme swaps the launcher's mark and name for the club's and
+                fixes the accent to its colour; tint strength stays yours. The accent tints every
+                surface and marks the primary action and live states, and at 0% tint the interface
+                is neutral grey.</p>
         </div>
     </details>
 

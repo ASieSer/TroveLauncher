@@ -68,11 +68,11 @@ DEFAULTS = {
     "custom_dirs": [],
     "reparent_glyph": False,
     "hide_emails": True,
-    # Disposición de la lista de cuentas: "cards" (rejilla) o "table".
-    "layout": "cards",
-    # Apariencia: acento, partículas del fondo y familia tipográfica
-    # ("system" | "quicksand" | "comfortaa").
-    "theme": {"accent": "#22c55e", "stars": True, "font": "system"},
+    # Apariencia: acento, partículas del fondo, familia tipográfica
+    # ("system" | "quicksand" | "comfortaa") y tema de club
+    # ("" | "mystic-cave" | "arsyn" | "sayro"), que fija el acento mientras
+    # esté puesto.
+    "theme": {"accent": "#22c55e", "stars": True, "font": "system", "club": ""},
 }
 
 
@@ -107,6 +107,9 @@ def load() -> dict:
 
     if raw is not None:
         data.update(raw)
+    # Resto de la disposición en tabla, que ya no existe: se descarta al cargar
+    # y el primer guardado la borra del fichero.
+    data.pop("layout", None)
     return _migrate(data)
 
 
