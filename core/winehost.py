@@ -20,6 +20,7 @@ número y espera en su propio evento, y hay un hilo lector que reparte.
 from __future__ import annotations
 
 import base64
+import collections
 import os
 import shutil
 import subprocess
@@ -92,6 +93,12 @@ class WineHelper:
         self._pending: dict[int, dict] = {}
         self._reader: threading.Thread | None = None
         self._path_cache: dict[str, str] = {}
+        # Lo último que Wine haya dicho por stderr. Cuando el ayudante se muere,
+        # la razón está AHÍ y en ningún otro sitio: "wineserver: version
+        # mismatch", "wine: could not load...", un prefijo de otro runner. Sin
+        # esto sólo quedaba un "el ayudante ha muerto" que no ayuda a nadie.
+        self._stderr: collections.deque[str] = collections.deque(maxlen=25)
+        self._errthread: threading.Thread | None = None
 
     # --- ciclo de vida ----------------------------------------------------
 
@@ -117,20 +124,27 @@ class WineHelper:
             if not self.helper.is_file():
                 raise WineError(f"the helper {self.helper} is missing. Build it with "
                                 f"tools/build_helper.sh.")
+            self._stderr.clear()
             try:
                 self._proc = subprocess.Popen(
                     [self.wine, str(self.helper)],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL, env=self.env(), bufsize=1,
+                    stderr=subprocess.PIPE, env=self.env(), bufsize=1,
                     text=True, encoding="utf-8", errors="replace")
             except OSError as exc:
                 raise WineError(f"could not start Wine: {exc}") from exc
             self._reader = threading.Thread(target=self._read_loop, daemon=True,
                                             name="wine-helper")
             self._reader.start()
+            self._errthread = threading.Thread(target=self._drain_stderr,
+                                               daemon=True, name="wine-helper-err")
+            self._errthread.start()
         # Que responda antes de dar por bueno el arranque: un prefijo roto falla
         # aquí y no a mitad de un lanzamiento.
-        self.call("ping", timeout=60)
+        try:
+            self.call("ping", timeout=60)
+        except WineError as exc:
+            raise WineError(self._explain(str(exc))) from exc
 
     def stop(self) -> None:
         proc, self._proc = self._proc, None
@@ -153,6 +167,64 @@ class WineHelper:
             self._pending.clear()
 
     # --- transporte -------------------------------------------------------
+
+    def _drain_stderr(self) -> None:
+        """Guarda lo que Wine escupe por stderr, sin volcarlo al registro.
+
+        Wine es hablador incluso cuando todo va bien, así que esto no se enseña
+        salvo que algo falle; entonces es lo único que explica el fallo.
+        """
+        proc = self._proc
+        if not proc or not proc.stderr:
+            return
+        for raw in proc.stderr:
+            text = raw.rstrip()
+            if text:
+                self._stderr.append(text)
+
+    def _explain(self, problem: str) -> str:
+        """El error, con lo que Wine dijo y una pista si se puede afinar.
+
+        Idempotente: el lector explica en cuanto el proceso muere, y el arranque
+        vuelve a pasar por aquí con ese mismo texto. Sin esta guarda, el usuario
+        leía la queja de Wine dos veces seguidas.
+        """
+        if "wine said:" in problem or "wine exited with code" in problem:
+            return problem
+        # Esperar al hilo que lee stderr: sin esto se explicaba el fallo ANTES
+        # de que Wine terminara de contarlo, y salía un "ha muerto" pelado.
+        if self._errthread and self._errthread.is_alive():
+            self._errthread.join(timeout=5)
+        parts = [problem]
+        proc = self._proc
+        code = proc.poll() if proc else None
+        if code is not None:
+            parts.append(f"wine exited with code {code}")
+        tail = [t for t in self._stderr][-6:]
+        if tail:
+            parts.append("wine said:\n  " + "\n  ".join(tail))
+        hint = self._hint(" ".join(self._stderr).lower())
+        if hint:
+            parts.append(hint)
+        return " — ".join(parts[:2]) + ("\n" + "\n".join(parts[2:]) if parts[2:] else "")
+
+    def _hint(self, said: str) -> str:
+        """Pistas para los fallos que tienen un nombre conocido."""
+        if "version mismatch" in said or "wineserver" in said:
+            return ("Hint: a wineserver from a DIFFERENT Wine build is already "
+                    "running for this prefix. Close the app that opened it "
+                    "(Bottles, Lutris, Steam) or run "
+                    f"`WINEPREFIX={self.prefix} wineserver -k`, then try again.")
+        if "/bottles/" in str(self.prefix).lower():
+            return ("Hint: this prefix was made by Bottles, which uses its own "
+                    "Wine build. Point Settings → Wine at the same runner "
+                    "Bottles uses for this bottle, or launch it from Bottles "
+                    "once so its runner updates the prefix.")
+        if "compatdata" in str(self.prefix).lower():
+            return ("Hint: this is a Proton prefix. Point Settings → Wine at "
+                    "that Proton's own binary (…/dist/bin/wine or "
+                    "…/files/bin/wine).")
+        return ""
 
     def _read_loop(self) -> None:
         proc = self._proc
@@ -180,10 +252,17 @@ class WineHelper:
             else:
                 slot["error"] = _decode(payload) or "unknown error"
             slot["event"].set()
-        # stdout cerrado: el ayudante murió.
+        # stdout cerrado: el ayudante murió. Se le da un instante a Wine para
+        # terminar de escribir su queja antes de contarla.
+        if self._proc:
+            try:
+                self._proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        message = self._explain("the Wine helper died")
         with self._lock:
             for slot in self._pending.values():
-                slot["error"] = "the Wine helper died"
+                slot["error"] = message
                 slot["event"].set()
             self._pending.clear()
 

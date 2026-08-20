@@ -80,13 +80,6 @@ else:
         line("wine version", "not answering", False)
         fail("Wine is installed but will not run; try `wine --version` by hand.")
 
-helper = winehost.helper_path()
-line("Wine helper", helper.name if helper.is_file() else "MISSING", helper.is_file())
-if not helper.is_file():
-    fail(f"{helper} is missing. It ships pre-built in the repository; if the\n"
-         f"     binary was deleted, rebuild it with tools/build_helper.sh "
-         f"(needs mingw-w64).")
-
 # --- secretos --------------------------------------------------------------
 from core import vault  # noqa: E402
 
@@ -113,6 +106,43 @@ else:
     fail("Trove was not found. It is looked for inside Proton prefixes\n"
          "     (steamapps/compatdata/*/pfx) and Wine ones (~/.wine, Lutris,\n"
          "     Bottles). If yours lives elsewhere, add it by hand from the app.")
+
+# --- el ayudante, DE VERDAD ------------------------------------------------
+#
+# Que el fichero exista no significa que Wine pueda ejecutarlo: el prefijo puede
+# ser de otro runner, o tener un wineserver ajeno en marcha. Se arranca contra el
+# prefijo donde vive el juego, que es el que se usará al lanzar.
+helper = winehost.helper_path()
+if not helper.is_file():
+    line("Wine helper", "MISSING", False)
+    fail(f"{helper} is missing. It ships pre-built in the repository; if the\n"
+         f"     binary was deleted, rebuild it with tools/build_helper.sh "
+         f"(needs mingw-w64).")
+elif wine:
+    from core import prefs  # noqa: E402
+
+    # El prefijo que importa es el de la instalación ELEGIDA en la aplicación,
+    # no el de la primera que se detecte: son sitios distintos y el juego sólo
+    # existe dentro del suyo.
+    data = prefs.load()
+    chosen = data.get("game_path") or (found[0]["path"] if found else "")
+    game = Path(chosen) if chosen else None
+    prefix = winehost.prefix_for(game, data.get("wine_prefix", ""))
+    if chosen:
+        print(f"     · launching from {chosen}")
+    probe = winehost.WineHelper(wine=wine, prefix=prefix, log=lambda *a: None)
+    try:
+        probe.start()
+        pid = probe.call("ping")[0]
+        seen = len(probe.list_processes())
+        line("Wine helper", f"answers in {prefix}", True)
+        print(f"     · pid {pid} inside the prefix, sees {seen} processes")
+    except Exception as exc:
+        line("Wine helper", "does NOT run", False)
+        fail(f"The helper cannot run inside {prefix}:\n     "
+             + str(exc).replace("\n", "\n     "))
+    finally:
+        probe.stop()
 
 print("-" * 62)
 if problems:

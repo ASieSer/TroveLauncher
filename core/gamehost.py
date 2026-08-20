@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 from pathlib import Path
 
 from . import prefs
@@ -192,11 +193,28 @@ class WineHost(GameHost):
             self.check()
             wine, configured = self._settings()
             prefix = winehost.prefix_for(game_exe, configured)
-            helper = winehost.WineHelper(wine=wine, prefix=prefix, log=self._log)
-            helper.start()
-            self._log(f"[wine] helper running (prefix {prefix})")
-            self._helper = helper
-            return helper
+
+            # Un intento y un reintento. Wine falla de vez en cuando al arrancar
+            # sobre un prefijo que se está inicializando o cuyo wineserver
+            # anterior aún se está apagando; a la segunda va. Si vuelve a fallar
+            # es que el problema es de verdad, y el error ya trae lo que dijo
+            # Wine (ver WineHelper._explain).
+            last = None
+            for attempt in (1, 2):
+                helper = winehost.WineHelper(wine=wine, prefix=prefix, log=self._log)
+                try:
+                    helper.start()
+                except winehost.WineError as exc:
+                    helper.stop()
+                    last = exc
+                    if attempt == 1:
+                        self._log("[wine] the helper did not start; retrying once")
+                        time.sleep(2.0)
+                    continue
+                self._log(f"[wine] helper running (prefix {prefix})")
+                self._helper = helper
+                return helper
+            raise HostUnavailable(str(last))
 
     # -- operaciones --
     def spawn(self, exe: Path, ticket: str, auth_server: str, *,
