@@ -37,7 +37,8 @@ import threading
 import time
 from pathlib import Path
 
-from . import installs, prefs, trionauth
+from . import gamehost, installs, prefs, trionauth
+from . import vault as vault_mod
 from . import updater as _updater
 from .paths import app_data_dir, macaddr_path, trove_appdata_dir
 
@@ -322,25 +323,15 @@ class LauncherService:
             "theme": data.get("theme") or dict(prefs.DEFAULTS["theme"]),
             "update_first": bool(data.get("update_first", True)),
             "reparent_glyph": bool(data.get("reparent_glyph", False)),
-            "folders": self._folder_paths(data),
             "folders": self._folders(data),
             "versions": self._versions(data),
+            # Con qué se lanza aquí y dónde se guardan los secretos: la
+            # interfaz lo necesita para explicar por qué algo no se puede.
+            "host": self._host().status(),
+            "vault": vault_mod.status(),
             "busy": self.busy,
             "busy_op": self._busy_op,
             "running": running,
-        }
-
-    def _folder_paths(self, data: dict) -> dict:
-        """Rutas que la interfaz enseña en Ajustes -> Folders.
-
-        Se devuelven aunque no existan todavía: ver la ruta vacía es información
-        útil (dice dónde irá), y ``open_folder`` ya crea la que hace falta.
-        """
-        return {
-            "game": data.get("game_path", ""),
-            "pts": data.get("pts_game_path", ""),
-            "modcfg": str(trove_appdata_dir() / "ModCfgs"),
-            "data": str(app_data_dir()),
         }
 
     def _folders(self, data: dict) -> list[dict]:
@@ -532,6 +523,10 @@ class LauncherService:
     def _emit_running(self) -> None:
         self.emit("running", "update", instances=self.running_list())
 
+    def _host(self) -> "gamehost.GameHost":
+        """Quien sabe lanzar en este equipo: Windows directo, o Wine."""
+        return gamehost.host(log=self._log)
+
     def _track_launch(self, pid: int, info: dict) -> None:
         info = dict(info)
         info["pid"] = pid
@@ -557,14 +552,14 @@ class LauncherService:
                 self._stopping.add(pid)
         if not known:
             return {"ok": False, "error": "That process is not tracked by the launcher."}
-        if not _terminate(pid):
+        if not self._host().terminate(pid):
             with self._launch_lock:
                 self._stopping.discard(pid)
             return {"ok": False, "error": f"Could not stop process {pid}."}
         return {"ok": True, "pid": pid}
 
     def _monitor_launch(self, pid: int) -> None:
-        code = _wait_for_exit(pid)
+        code = self._host().wait_for_exit(pid)
         with self._launch_lock:
             info = self._launches.pop(pid, None)
             stopped_by_user = pid in self._stopping
@@ -607,7 +602,7 @@ class LauncherService:
             self._emit_running()
 
     def _relaunch(self, info: dict) -> None:
-        from . import inject, launch as launch_mod
+        from . import launch as launch_mod
         time.sleep(3.0)  # deja que el anti-cheat y el servicio se asienten
         creds = prefs.load_credentials(info["email"])
         password = creds.get("password", "") if creds else ""
@@ -616,10 +611,10 @@ class LauncherService:
         ticket = auth.get_ticket()
         exe = self._resolve_exe(Path(info["game_path"]))
         logger = self._logger("relog", info["email"])
-        before = inject.pids_by_name(exe.name) | self._tracked_pids()
-        spawn_pid = inject.spawn(exe, ticket, launch_mod.get_auth_server(info["region"]),
-                                 parent_process_name=self._parent_process(), log=logger)
-        pid = inject.resolve_game_pid(spawn_pid, exe.name, exclude=before, log=logger)
+        pid = self._host().spawn(
+            exe, ticket, launch_mod.get_auth_server(info["region"]),
+            parent_process_name=self._parent_process() or "",
+            exclude=self._tracked_pids(), log=logger)
         new_info = dict(info)
         new_info["started_at"] = time.time()
         new_info["relogs"] = info.get("relogs", 0) + 1
@@ -686,8 +681,7 @@ class LauncherService:
                               else "That account is checking its sign-in.")}
 
         def _work() -> None:
-            # Import perezoso: estos módulos enlazan kernel32/user32 al importarse.
-            from . import inject, launch as launch_mod
+            from . import launch as launch_mod
 
             use_password = password
             if not use_password:  # sin contraseña escrita, tiramos de la guardada
@@ -718,17 +712,10 @@ class LauncherService:
 
             self.emit("play", "launching", email=email, message=f"Launching {who}...")
             logger = self._logger("play", email)
-            # Instantánea previa: sirve para no confundir una partida que ya
-            # estuviera abierta con la que acabamos de lanzar.
-            before = inject.pids_by_name(exe.name) | self._tracked_pids()
-            spawn_pid = inject.spawn(exe, ticket, launch_mod.get_auth_server(region),
-                                     parent_process_name=self._parent_process(),
-                                     log=logger)
-            # Con el anti-cheat, spawn_pid es el LOADER, que muere en cuanto
-            # arranca el juego. Hay que seguir el proceso del juego o la cuenta
-            # parecería cerrarse a los pocos segundos (y el auto-relog saltaría).
-            pid = inject.resolve_game_pid(spawn_pid, exe.name, exclude=before,
-                                          log=logger)
+            pid = self._host().spawn(
+                exe, ticket, launch_mod.get_auth_server(region),
+                parent_process_name=self._parent_process() or "",
+                exclude=self._tracked_pids(), log=logger)
 
             self._track_launch(pid, {
                 "email": email, "game_path": str(game_dir),
@@ -945,55 +932,10 @@ class LauncherService:
         return {"ok": True}
 
 
-# --- utilidades de proceso (Windows) ---------------------------------------
+# --- utilidades de proceso -------------------------------------------------
 
-
-def _wait_for_exit(pid: int) -> int | None:
-    """Bloquea hasta que el proceso ``pid`` termine y devuelve su código de
-    salida (None si no se pudo abrir). Sólo Windows: se llega aquí únicamente
-    desde la ruta de lanzamiento, que ya es Windows-only."""
-    import ctypes
-    from ctypes import wintypes
-
-    k = ctypes.WinDLL("kernel32", use_last_error=True)
-    SYNCHRONIZE = 0x00100000
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    INFINITE = 0xFFFFFFFF
-    k.OpenProcess.restype = wintypes.HANDLE
-    k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    k.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-    k.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
-
-    handle = k.OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
-    if not handle:
-        return None
-    try:
-        k.WaitForSingleObject(handle, INFINITE)
-        code = wintypes.DWORD()
-        k.GetExitCodeProcess(handle, ctypes.byref(code))
-        return int(code.value)
-    finally:
-        k.CloseHandle(handle)
-
-
-def _terminate(pid: int) -> bool:
-    """Cierra el proceso ``pid``. Windows: OpenProcess + TerminateProcess."""
-    import ctypes
-    from ctypes import wintypes
-
-    k = ctypes.WinDLL("kernel32", use_last_error=True)
-    PROCESS_TERMINATE = 0x0001
-    k.OpenProcess.restype = wintypes.HANDLE
-    k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    k.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
-
-    handle = k.OpenProcess(PROCESS_TERMINATE, False, int(pid))
-    if not handle:
-        return False
-    try:
-        return bool(k.TerminateProcess(handle, 0))
-    finally:
-        k.CloseHandle(handle)
+# Lanzar, esperar y cerrar viven en ``gamehost``: en Windows son llamadas Win32
+# directas y en Linux van al ayudante que corre dentro del prefijo de Wine.
 
 
 def _open_in_file_manager(target: Path) -> None:

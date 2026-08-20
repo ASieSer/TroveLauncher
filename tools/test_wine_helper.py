@@ -88,7 +88,7 @@ try:
     check("enumera procesos del prefijo",
           len(procs) > 0 and all(len(p) == 3 for p in procs))
 
-    def run_case(label, with_loader, stay=False):
+    def run_case(label, with_loader, stay=False, exclude=None):
         """Lanza el juego falso y devuelve (resultado, ticket recibido)."""
         out = game_dir / f"got-{label}.txt"
         loader = game_dir / "xldr_Trove_GL_loader_x64.exe"
@@ -106,7 +106,8 @@ try:
         if not stay:
             os.environ.pop("FAKEGAME_STAY", None)
         helper.start()
-        res = helper.spawn(game_dir / "Trove_x64.exe", TICKET, AUTH, wait_ms=20000)
+        res = helper.spawn(game_dir / "Trove_x64.exe", TICKET, AUTH, wait_ms=20000,
+                           exclude=exclude)
         for _ in range(40):
             if out.exists():
                 break
@@ -152,7 +153,28 @@ try:
     code = helper.wait_for_exit(res["pid"])
     check("y wait se entera de que murió", code is not None and code != 7)
 
-    # --- 4) errores legibles ----------------------------------------------
+    # --- 4) dos partidas a la vez no se confunden -------------------------
+    #
+    # Con el loader por medio hay que SALIR A BUSCAR el proceso del juego, y el
+    # último recurso es "cualquier Trove que no estuviera antes". Si una segunda
+    # cuenta no excluye la partida que ya vigilamos, puede adjudicarse la ajena y
+    # entonces cerrar una cierra la otra.
+    first, _, _ = run_case("dos-a", with_loader=True, stay=True)
+    second, _, _ = run_case("dos-b", with_loader=True, stay=True,
+                            exclude={first["pid"]})
+    check("la segunda partida recibe un pid propio",
+          second["pid"] > 0 and second["pid"] != first["pid"])
+    check("y la primera sigue viva después",
+          first["pid"] in {p for p, _pp, n in helper.list_processes()
+                           if n.lower() == "trove_x64.exe"})
+    helper.terminate(first["pid"])
+    helper.terminate(second["pid"])
+
+    # --- 5) errores legibles ----------------------------------------------
+    #
+    # Sin loader delante: con él, lo que se ejecuta es el loader —que sí existe—
+    # y el fallo aparece más tarde, exactamente igual que en Windows.
+    (game_dir / "xldr_Trove_GL_loader_x64.exe").unlink(missing_ok=True)
     try:
         helper.spawn(game_dir / "NoExiste.exe", TICKET, AUTH, wait_ms=2000)
         check("un ejecutable inexistente da error", False)

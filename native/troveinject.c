@@ -23,7 +23,7 @@
  * partida abierta, este proceso tiene que seguir vivo. Lo arranca el lado
  * Linux (core/winehost.py) y le habla por stdin/stdout con líneas de texto:
  *
- *   -> <id> spawn <exe64> <ticket64> <auth64> <parent64> <wait_ms>
+ *   -> <id> spawn <exe64> <ticket64> <auth64> <parent64> <wait_ms> [pid,pid…]
  *   <- <id> ok <pid> <consumed 0|1> <via_loader 0|1>
  *   -> <id> wait <pid>            <- <id> ok <código de salida>   (cuando salga)
  *   -> <id> kill <pid>            <- <id> ok
@@ -279,6 +279,42 @@ static DWORD find_pid_by_name(const wchar_t *name)
     return found;
 }
 
+/* Pids que NO pueden ser la partida que acabamos de lanzar: los que ya estaban
+   corriendo antes, más los que la aplicación ya está vigilando. Sin esto, dos
+   cuentas que arrancan a la vez pueden adjudicarse la partida de la otra. */
+struct pidset { DWORD *v; size_t n, cap; };
+
+static void pidset_add(struct pidset *set, DWORD pid)
+{
+    if (set->n == set->cap) {
+        size_t cap = set->cap ? set->cap * 2 : 16;
+        DWORD *v = (DWORD *)realloc(set->v, cap * sizeof(DWORD));
+        if (!v) return;
+        set->v = v; set->cap = cap;
+    }
+    set->v[set->n++] = pid;
+}
+
+static int pidset_has(const struct pidset *set, DWORD pid)
+{
+    for (size_t i = 0; i < set->n; i++) if (set->v[i] == pid) return 1;
+    return 0;
+}
+
+/* Añade a `set` los pids que ya corren con ese nombre de ejecutable. */
+static void pidset_add_running(struct pidset *set, const wchar_t *exe_name)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    PROCESSENTRY32W e; e.dwSize = sizeof e;
+    if (Process32FirstW(snap, &e)) {
+        do {
+            if (_wcsicmp(e.szExeFile, exe_name) == 0) pidset_add(set, e.th32ProcessID);
+        } while (Process32NextW(snap, &e));
+    }
+    CloseHandle(snap);
+}
+
 /*
  * Traduce el pid de CreateProcess al pid REAL del juego.
  *
@@ -289,7 +325,7 @@ static DWORD find_pid_by_name(const wchar_t *name)
  * estuviera antes. Mismo criterio que inject.resolve_game_pid.
  */
 static DWORD resolve_game_pid(DWORD spawn_pid, const wchar_t *exe_name,
-                              DWORD timeout_ms)
+                              DWORD timeout_ms, const struct pidset *exclude)
 {
     DWORD deadline = GetTickCount() + timeout_ms;
     do {
@@ -300,8 +336,9 @@ static DWORD resolve_game_pid(DWORD spawn_pid, const wchar_t *exe_name,
             if (Process32FirstW(snap, &e)) {
                 do {
                     if (_wcsicmp(e.szExeFile, exe_name) != 0) continue;
-                    if (e.th32ProcessID == spawn_pid) self = e.th32ProcessID;
-                    else if (e.th32ParentProcessID == spawn_pid) child = e.th32ProcessID;
+                    if (e.th32ProcessID == spawn_pid) { self = e.th32ProcessID; continue; }
+                    if (pidset_has(exclude, e.th32ProcessID)) continue;
+                    if (e.th32ParentProcessID == spawn_pid) child = e.th32ProcessID;
                     else if (!any) any = e.th32ProcessID;
                 } while (Process32NextW(snap, &e));
             }
@@ -324,7 +361,8 @@ static DWORD resolve_game_pid(DWORD spawn_pid, const wchar_t *exe_name,
  * este ayudante siga vivo hasta que la aplicación se cierre.
  */
 static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
-                      const char *auth, const wchar_t *parent, DWORD wait_ms)
+                      const char *auth, const wchar_t *parent, DWORD wait_ms,
+                      const char *exclude_csv)
 {
     /* ¿Está el loader del anti-cheat junto al ejecutable? */
     wchar_t dir[MAX_PATH * 2];
@@ -337,23 +375,32 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     BOOL via_loader = GetFileAttributesW(loader) != INVALID_FILE_ATTRIBUTES;
     const wchar_t *exe_to_run = via_loader ? loader : exe;
 
+    /* Foto previa: lo que ya corría no puede ser la partida que vamos a abrir. */
+    struct pidset exclude = {NULL, 0, 0};
+    for (const char *p = exclude_csv; p && *p; ) {
+        pidset_add(&exclude, (DWORD)strtoul(p, NULL, 10));
+        const char *comma = strchr(p, ',');
+        p = comma ? comma + 1 : NULL;
+    }
+    pidset_add_running(&exclude, game_name);
+
     size_t blob_len = 0;
     unsigned char *blob = build_rift(ticket, &blob_len);
-    if (!blob) { emit_err(id, "no hay memoria para el blob del ticket"); return; }
+    if (!blob) { free(exclude.v); emit_err(id, "no hay memoria para el blob del ticket"); return; }
 
     SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
     HANDLE hmap = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa, PAGE_READWRITE,
                                      0, (DWORD)blob_len, NULL);
-    if (!hmap) { free(blob); emit_winerr(id, "CreateFileMapping falló"); return; }
+    if (!hmap) { free(blob); free(exclude.v); emit_winerr(id, "CreateFileMapping falló"); return; }
     void *view = MapViewOfFile(hmap, FILE_MAP_WRITE, 0, 0, blob_len);
-    if (!view) { CloseHandle(hmap); free(blob); emit_winerr(id, "MapViewOfFile falló"); return; }
+    if (!view) { CloseHandle(hmap); free(blob); free(exclude.v); emit_winerr(id, "MapViewOfFile falló"); return; }
     memcpy(view, blob, blob_len);
     UnmapViewOfFile(view);
     SecureZeroMemory(blob, blob_len);
     free(blob);
 
     HANDLE hevent = CreateEventW(&sa, FALSE, FALSE, NULL);
-    if (!hevent) { CloseHandle(hmap); emit_winerr(id, "CreateEvent falló"); return; }
+    if (!hevent) { CloseHandle(hmap); free(exclude.v); emit_winerr(id, "CreateEvent falló"); return; }
 
     /* Reparent: el loader como hijo de Glyph, para que la cadena de lanzamiento
        sea la de una partida legítima (ver PROC_THREAD_ATTRIBUTE_PARENT_PROCESS
@@ -379,7 +426,7 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
         (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(attr_size);
     if (!attr || !InitializeProcThreadAttributeList(attr, 1, 0, &attr_size)) {
         if (parent_handle) CloseHandle(parent_handle);
-        free(attr);
+        free(attr); free(exclude.v);
         emit_winerr(id, "InitializeProcThreadAttributeList falló");
         return;
     }
@@ -392,7 +439,7 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
         : UpdateProcThreadAttribute(attr, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
                                     handles, sizeof handles, NULL, NULL);
     if (!attr_ok) {
-        DeleteProcThreadAttributeList(attr); free(attr);
+        DeleteProcThreadAttributeList(attr); free(attr); free(exclude.v);
         if (parent_handle) CloseHandle(parent_handle);
         emit_winerr(id, "UpdateProcThreadAttribute falló");
         return;
@@ -437,7 +484,7 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     DeleteProcThreadAttributeList(attr); free(attr);
     if (parent_handle) CloseHandle(parent_handle);
     if (!ok) {
-        CloseHandle(hmap); CloseHandle(hevent);
+        CloseHandle(hmap); CloseHandle(hevent); free(exclude.v);
         emit_winerr(id, "CreateProcess falló");
         return;
     }
@@ -453,7 +500,8 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     }
     CloseHandle(pi.hProcess);
 
-    DWORD pid = resolve_game_pid(pi.dwProcessId, game_name, 30000);
+    DWORD pid = resolve_game_pid(pi.dwProcessId, game_name, 30000, &exclude);
+    free(exclude.v);
     emit("%ld ok %lu %d %d", id, (unsigned long)pid, consumed ? 1 : 0,
          via_loader ? 1 : 0);
     /* hmap y hevent se quedan abiertos a propósito hasta que muera el ayudante. */
@@ -571,12 +619,15 @@ int main(void)
             char *parent8 = decode_arg(next_token(&cursor));
             char *wait_tok = next_token(&cursor);
             DWORD wait_ms = wait_tok ? (DWORD)strtoul(wait_tok, NULL, 10) : 30000;
+            char *exclude_csv = next_token(&cursor);
             if (!exe8 || !ticket || !auth || !parent8) {
                 emit_err(id, "spawn: faltan argumentos");
             } else {
                 wchar_t *exe = utf8_to_wide((const unsigned char *)exe8, strlen(exe8));
                 wchar_t *parent = utf8_to_wide((const unsigned char *)parent8, strlen(parent8));
-                if (exe && parent) cmd_spawn(id, exe, ticket, auth, parent, wait_ms);
+                if (exe && parent)
+                    cmd_spawn(id, exe, ticket, auth, parent, wait_ms,
+                              exclude_csv ? exclude_csv : "");
                 else emit_err(id, "spawn: no hay memoria");
                 free(exe); free(parent);
             }

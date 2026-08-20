@@ -244,13 +244,17 @@ class WineHelper:
     # --- órdenes ----------------------------------------------------------
 
     def spawn(self, exe: str | os.PathLike, ticket: str, auth_server: str, *,
-              parent_process_name: str = "", wait_ms: int = 30000) -> dict:
+              parent_process_name: str = "", wait_ms: int = 30000,
+              exclude: set[int] | None = None) -> dict:
+        """``exclude``: partidas que ya vigilamos, para que el ayudante no las
+        confunda con la que acaba de abrir (ver resolve_game_pid en el .c)."""
         res = self.call("spawn",
                         _encode(self.to_windows_path(exe)),
                         _encode(ticket),
                         _encode(auth_server),
                         _encode(parent_process_name or ""),
                         wait_ms,
+                        ",".join(str(int(p)) for p in sorted(exclude or [])) or "0",
                         timeout=max(120.0, wait_ms / 1000 + 90))
         if not res:
             raise WineError("el ayudante no devolvió el pid del juego")
