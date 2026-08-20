@@ -16,18 +16,27 @@ Concurrencia
 
 Las operaciones pesadas (comprobar, actualizar, reparar) corren en un hilo
 demonio y sólo una a la vez, protegida por ``_busy``. Los **lanzamientos** son la
-excepción: se permiten varios a la vez, porque lanzar varias cuentas en paralelo
-es justamente el caso de uso. Cada lanzamiento lleva su propio hilo y su propia
-cola de 2FA, identificada por el email.
+excepción: se preparan varios a la vez, porque lanzar un grupo entero es
+justamente el caso de uso. Cada lanzamiento lleva su propio hilo y su propia cola
+de 2FA, identificada por el email.
+
+Lo que NO va en paralelo son dos cosas, y las dos por el mismo motivo —que se
+pisan entre ellas sobre un recurso compartido:
+
+  * la fase de actualización, una por carpeta de juego (``_sync_for_play``), y
+  * el arranque en sí (``_spawn_game``), de uno en uno y con un respiro entre
+    cuentas, porque el proceso del juego se identifica por «el que no estaba
+    antes» y dos arranques simultáneos se adjudican el mismo.
 
 Auto-relog
 ----------
 
-Tras lanzar, un hilo vigila el PID. Si el proceso muere de forma anormal (código
-distinto de 0) y llevaba vivo más de ``_MIN_UPTIME_FOR_RELOG``, volvemos a
-autenticar y relanzar. Una salida limpia (código 0: el jugador cerró el juego) no
-se relanza nunca, y una muerte demasiado rápida tampoco, para no entrar en un
-bucle de arranques fallidos.
+Tras lanzar, un hilo vigila el PID. Cuando el juego termina —se haya caído o se
+haya cerrado con normalidad, que es lo que pasa al echarte por inactividad—
+volvemos a autenticar y relanzar. No se relanza lo que cerró el usuario desde el
+launcher, ni lo que se muere antes de ``_MIN_UPTIME_FOR_RELOG``, para no
+encadenar arranques fallidos. Y si la caída dejó abierto el reportador de fallos
+de Trove, se cierra: ver ``_close_crash_handler``.
 """
 
 from __future__ import annotations
@@ -65,6 +74,21 @@ REGION_BRANCH = {"NA": ("live-us", "live"), "EU": ("live-us", "live"),
 _CANCEL_2FA = object()          # centinela que aborta un lanzamiento en espera de código
 _MIN_UPTIME_FOR_RELOG = 25.0    # segundos: si muere antes, no relanzamos
 
+# Respiro entre arranques consecutivos. No es estética: el proceso del juego se
+# identifica por "el que no estaba antes", así que el anterior tiene que haber
+# aparecido ya en la lista de procesos cuando el siguiente mire.
+_LAUNCH_GAP = 2.5
+
+# Cuánto damos por buena una sincronización recién hecha sobre la misma carpeta.
+# Lanzar diez cuentas no son diez comprobaciones de actualización seguidas de la
+# misma instalación.
+_UPDATE_FRESH_FOR = 120.0
+
+# El reportador de fallos que Trove deja abierto al crashear. No conocemos su
+# nombre exacto en todas las instalaciones, así que se busca por esta pista y se
+# exige además que sea cosa de ESTA partida (ver _close_crash_handler).
+_CRASH_HINT = "crash"
+
 
 class LauncherService:
     """Toda la lógica del launcher. La UI sólo llama a métodos de esta clase."""
@@ -92,6 +116,17 @@ class LauncherService:
         # pids que estamos matando a propósito: su muerte NO debe disparar el
         # auto-relog, porque el usuario pidió explícitamente cerrar el juego.
         self._stopping: set[int] = set()
+
+        # Los lanzamientos se preparan en paralelo pero ARRANCAN de uno en uno:
+        # ver _spawn_game. El sello es del último arranque, para dejar el respiro.
+        self._spawn_gate = threading.Lock()
+        self._last_spawn_at = 0.0
+
+        # Una carpeta de juego, una actualización a la vez: lanzar diez cuentas
+        # no puede poner diez updaters a escribir sobre los mismos archivos.
+        self._dir_locks: dict[str, threading.Lock] = {}
+        self._dir_synced: dict[str, float] = {}
+        self._dir_guard = threading.Lock()
 
         # email -> {"ok": bool, "detail": str}: resultado del último intento real
         # (comprobar o lanzar) EN ESTA SESIÓN. Deliberadamente en memoria y no en
@@ -529,16 +564,79 @@ class LauncherService:
         """Quien sabe lanzar en este equipo: Windows directo, o Wine."""
         return gamehost.host(log=self._log)
 
-    def _track_launch(self, pid: int, info: dict) -> None:
+    def _track_launch(self, pid: int, info: dict) -> int:
+        """Apunta una partida y ponle un vigilante. Devuelve su pid.
+
+        Si ese pid ya es de otra cuenta, no lo pisamos: significa que la
+        resolución se equivocó y quedarnos con el último dejaría una partida sin
+        vigilar y la fila de la otra cuenta con el nombre cambiado. Preferimos
+        que ESTA cuenta falle y lo diga.
+        """
         info = dict(info)
         info["pid"] = pid
         info.setdefault("started_at", time.time())
         info.setdefault("relogs", 0)
         with self._launch_lock:
+            other = self._launches.get(pid)
+            if other and other["email"].lower() != info["email"].lower():
+                raise RuntimeError(
+                    f"Could not tell which game process belongs to this account: "
+                    f"pid {pid} is already {prefs.display_name(other['email'])}. "
+                    f"Launch it again in a moment.")
             self._launches[pid] = info
         self._emit_running()
         threading.Thread(target=self._monitor_launch, args=(pid,), daemon=True,
                          name=f"trove-mon-{pid}").start()
+        return pid
+
+    def _spawn_game(self, exe: Path, ticket: str, auth_server: str, info: dict,
+                    *, log=print) -> int:
+        """Arranca el juego y apunta la partida. DE UNA EN UNA.
+
+        Con el loader del anti-cheat por medio no lanzamos el juego, lanzamos al
+        loader; el proceso del juego hay que salir a buscarlo después, y lo único
+        que lo distingue es que antes no estaba. Dos cuentas arrancando a la vez
+        miran la misma lista y pueden quedarse con el mismo Trove: una partida se
+        queda sin vigilar y la otra aparece con el nombre de la vecina —que es
+        justo lo que pasaba al pulsar «Launch all».
+
+        Por eso el arranque es exclusivo y con un respiro entre cuentas. Lo caro
+        (actualizar, autenticar, esperar el 2FA) queda fuera y sigue en paralelo.
+        """
+        with self._spawn_gate:
+            pause = self._last_spawn_at + _LAUNCH_GAP - time.monotonic()
+            if pause > 0:
+                time.sleep(pause)
+            pid = self._host().spawn(
+                exe, ticket, auth_server,
+                parent_process_name=self._parent_process() or "",
+                exclude=self._tracked_pids(), log=log)
+            self._last_spawn_at = time.monotonic()
+            # Apuntarla DENTRO del cerrojo: el siguiente lanzamiento tiene que
+            # ver este pid en su lista de exclusión.
+            return self._track_launch(pid, info)
+
+    def _sync_for_play(self, game_dir: Path, branch: str, email: str) -> None:
+        """La fase de actualización de un lanzamiento, una por carpeta.
+
+        Lanzar un grupo entero son N lanzamientos sobre la MISMA instalación: sin
+        esto, N updaters bajando y escribiendo los mismos archivos a la vez. El
+        primero actualiza y los demás esperan; si acaba de hacerse, ni eso.
+        """
+        key = str(game_dir)
+        with self._dir_guard:
+            lock = self._dir_locks.setdefault(key, threading.Lock())
+        with lock:
+            since = time.monotonic() - self._dir_synced.get(key, float("-inf"))
+            if since < _UPDATE_FRESH_FOR:
+                self.emit("play", "updating", email=email,
+                          message="Files are already up to date.")
+                return
+            self.emit("play", "updating", email=email,
+                      message=f"Updating {'PTS' if branch == 'pts' else 'Live'}...")
+            self._run_sync("play", game_dir, branch, adopt=True, reset=False,
+                           emit_done=False, email=email)
+            self._dir_synced[key] = time.monotonic()
 
     def stop(self, pid: int) -> dict:
         """Cierra el juego de una instancia lanzada por nosotros.
@@ -560,6 +658,44 @@ class LauncherService:
             return {"ok": False, "error": f"Could not stop process {pid}."}
         return {"ok": True, "pid": pid}
 
+    def _close_crash_handler(self, game_pid: int) -> None:
+        """Cierra el reportador de fallos que deja el juego al caerse.
+
+        Cuando Trove se cae abre su ventana de «envíanos el informe» y ahí se
+        queda. Con auto-relog eso significa una ventana más por cada caída, hasta
+        llenar la pantalla de diálogos de partidas que ya no existen.
+
+        No sabemos cómo se llama el ejecutable en todas las instalaciones, así
+        que se busca por la pista del nombre y se exige además que sea de ESTA
+        muerte: o es hijo del proceso que acaba de morir, o ha aparecido después
+        de morir él. Lo que ya estuviera abierto no se toca —puede ser de otra
+        cuenta, o del usuario— y por eso la foto se hace aquí y no al lanzar.
+        """
+        host = self._host()
+        try:
+            before = {pid for pid, _ppid, name in host.list_processes()
+                      if _CRASH_HINT in name.lower()}
+        except Exception:
+            return
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            try:
+                procs = host.list_processes()
+            except Exception:
+                return
+            killed = False
+            for pid, ppid, name in procs:
+                if _CRASH_HINT not in name.lower():
+                    continue
+                if pid in before and ppid != game_pid:
+                    continue
+                if host.terminate(pid):
+                    killed = True
+                    self._log(f"[relog] closed the crash reporter ({name}, pid {pid})")
+            if killed:
+                return
+            time.sleep(1.0)
+
     def _monitor_launch(self, pid: int) -> None:
         code = self._host().wait_for_exit(pid)
         with self._launch_lock:
@@ -569,8 +705,13 @@ class LauncherService:
         if not info:
             return
         uptime = time.time() - info["started_at"]
-        clean_close = code == 0
         who = prefs.display_name(info["email"])
+
+        # Lo primero, quitar de en medio el diálogo del crash: da igual si luego
+        # volvemos a entrar o no, esa ventana no pinta nada ahí. Va en su propio
+        # hilo porque espera a que aparezca y no queremos retrasar el relog.
+        threading.Thread(target=self._close_crash_handler, args=(pid,),
+                         daemon=True, name=f"trove-crash-{pid}").start()
 
         if stopped_by_user:
             self._record_result(info["email"], True, "Stopped from the launcher.")
@@ -579,13 +720,23 @@ class LauncherService:
             self._emit_running()
             return
 
-        should_relog = (info.get("auto_relog") and not clean_close and code is not None
-                        and uptime >= _MIN_UPTIME_FOR_RELOG)
+        # Se vuelve a entrar se haya cerrado como se haya cerrado: un crash y una
+        # expulsión por inactividad son lo mismo visto desde aquí (la segunda, de
+        # hecho, cierra el juego limpiamente), y quien enciende el auto-relog lo
+        # que quiere es que la cuenta siga dentro. Lo único que no se relanza es
+        # lo que cerró el usuario —eso ya se ha atendido arriba— y lo que se
+        # muere enseguida, para no encadenar arranques fallidos.
+        should_relog = bool(info.get("auto_relog")) and uptime >= _MIN_UPTIME_FOR_RELOG
+
+        if should_relog and code is None and self._still_running(pid):
+            # No sabemos el código de salida y el proceso sigue en la lista: la
+            # espera falló, el juego no. Relanzar aquí sería duplicar la partida.
+            self._log(f"[relog] cannot watch pid {pid} any more, but it is still "
+                      f"running; not relogging")
+            should_relog = False
 
         if not should_relog:
-            if info.get("auto_relog") and clean_close:
-                message = f"{who} closed normally — not relogging."
-            elif info.get("auto_relog") and uptime < _MIN_UPTIME_FOR_RELOG:
+            if info.get("auto_relog") and uptime < _MIN_UPTIME_FOR_RELOG:
                 message = f"{who} exited after {int(uptime)}s — too soon to relog."
             else:
                 message = f"{who} has closed."
@@ -593,8 +744,9 @@ class LauncherService:
             self._emit_running()
             return
 
+        how = "closed" if code == 0 else f"exited (code {code})"
         self.emit("running", "relog", pid=pid, email=info["email"],
-                  message=f"{who} exited (code {code}) — signing back in...")
+                  message=f"{who} {how} — signing back in...")
         self._emit_running()
         try:
             self._relaunch(info)
@@ -602,6 +754,12 @@ class LauncherService:
             self.emit("running", "relog_failed", email=info["email"], error=str(exc),
                       message=f"Auto-relog for {who} failed: {exc}")
             self._emit_running()
+
+    def _still_running(self, pid: int) -> bool:
+        try:
+            return any(p == pid for p, _ppid, _name in self._host().list_processes())
+        except Exception:
+            return False
 
     def _relaunch(self, info: dict) -> None:
         from . import launch as launch_mod
@@ -612,15 +770,12 @@ class LauncherService:
         # Sin token_provider: un relog en segundo plano no puede pedir el 2FA.
         ticket = auth.get_ticket()
         exe = self._resolve_exe(Path(info["game_path"]))
-        logger = self._logger("relog", info["email"])
-        pid = self._host().spawn(
-            exe, ticket, launch_mod.get_auth_server(info["region"]),
-            parent_process_name=self._parent_process() or "",
-            exclude=self._tracked_pids(), log=logger)
         new_info = dict(info)
         new_info["started_at"] = time.time()
         new_info["relogs"] = info.get("relogs", 0) + 1
-        self._track_launch(pid, new_info)
+        pid = self._spawn_game(exe, ticket,
+                               launch_mod.get_auth_server(info["region"]),
+                               new_info, log=self._logger("relog", info["email"]))
         self.emit("running", "relogged", pid=pid, email=info["email"],
                   message=f"{prefs.display_name(info['email'])} signed back in (pid {pid}).")
 
@@ -692,10 +847,7 @@ class LauncherService:
                     use_password = creds.get("password", "")
 
             if do_update:
-                self.emit("play", "updating", email=email,
-                          message=f"Updating {'PTS' if branch == 'pts' else 'Live'}...")
-                self._run_sync("play", game_dir, branch, adopt=True, reset=False,
-                               emit_done=False, email=email)
+                self._sync_for_play(game_dir, branch, email)
 
             exe = self._resolve_exe(game_dir)
             if not exe.exists():
@@ -713,16 +865,11 @@ class LauncherService:
                 prefs.save_credentials(email, use_password)
 
             self.emit("play", "launching", email=email, message=f"Launching {who}...")
-            logger = self._logger("play", email)
-            pid = self._host().spawn(
+            pid = self._spawn_game(
                 exe, ticket, launch_mod.get_auth_server(region),
-                parent_process_name=self._parent_process() or "",
-                exclude=self._tracked_pids(), log=logger)
-
-            self._track_launch(pid, {
-                "email": email, "game_path": str(game_dir),
-                "region": region, "branch": branch, "auto_relog": auto_relog,
-            })
+                {"email": email, "game_path": str(game_dir), "region": region,
+                 "branch": branch, "auto_relog": auto_relog},
+                log=self._logger("play", email))
 
             # El launcher no toca la ventana del juego: ni la trae al frente, ni
             # la restaura, ni la enumera. Nada de lo que hacemos aquí necesita

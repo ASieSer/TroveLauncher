@@ -79,7 +79,10 @@ def _is_gui_executable(path: Path) -> tuple[bool, bool]:
             if subsystem != 2:                     # IMAGE_SUBSYSTEM_WINDOWS_GUI
                 return False, False
             return True, machine == 0x8664
-    except OSError:
+    except (OSError, struct.error):
+        # Un .exe a medias (una descarga interrumpida) se queda sin cabecera y
+        # el desempaquetado revienta. Eso no es un ejecutable válido, que es
+        # justo lo que se venía a preguntar; no es una excepción que soltar.
         return False, False
 
 

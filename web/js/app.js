@@ -63,6 +63,9 @@
     };
     const SERVER_TEXT = { NA: 'NA', EU: 'EU', PTS: 'PTS' };
 
+    // Separación entre peticiones de «Launch all» (ms). Ver launchAll.
+    const LAUNCH_ALL_STAGGER = 900;
+
     // --- utilidades -------------------------------------------------------
 
     let msgTimer = null;
@@ -347,7 +350,8 @@
         // en la cuenta y, si tiene partida abierta, se aplica a esa instancia.
         actions.appendChild(actionButton('relog',
             account.auto_relog
-                ? 'Auto-relog is ON — signs back in if the game crashes'
+                ? 'Auto-relog is ON — signs back in whenever the game closes '
+                  + '(crash, or kicked for being idle)'
                 : 'Auto-relog is OFF',
             account.auto_relog ? 'accent' : '',
             async () => {
@@ -871,11 +875,15 @@
         });
     }
 
-    /** Lanza varias cuentas de golpe.
+    /** Lanza varias cuentas, una detrás de otra.
      *
      *  Las que no tienen contraseña ni sesión se saltan: cada una abriría su
      *  propio diálogo y el usuario acabaría con una pila de modales encima.
-     *  El backend ya admite lanzamientos en paralelo, así que no serializamos. */
+     *
+     *  El orden de arranque lo impone el backend (ver `_spawn_game`), que es
+     *  quien puede: aquí sólo se separan las peticiones para no mandar diez
+     *  autenticaciones a Trion en el mismo instante y para que el estado de las
+     *  filas se vea avanzar de una en una en vez de encenderse todo a la vez. */
     async function launchAll(list, groupName) {
         const ready = list.filter((a) => a.status !== 'pending');
         const skipped = list.length - ready.length;
@@ -891,6 +899,7 @@
         render();
         for (const account of ready) {
             await call('play', { email: account.email, password: '' });
+            await new Promise((done) => setTimeout(done, LAUNCH_ALL_STAGGER));
         }
         if (skipped) notice(`${skipped} account(s) skipped: no saved password.`, 'error');
         refresh();

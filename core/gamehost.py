@@ -61,6 +61,10 @@ class GameHost:
     def pids_by_name(self, name: str) -> set[int]:
         return set()
 
+    def list_processes(self) -> list[tuple[int, int, str]]:
+        """``(pid, pid del padre, nombre)`` de lo que corre en este anfitrión."""
+        return []
+
     def close(self) -> None:
         pass
 
@@ -141,6 +145,11 @@ class NativeHost(GameHost):
         from . import inject
 
         return inject.pids_by_name(name)
+
+    def list_processes(self) -> list[tuple[int, int, str]]:
+        from . import inject
+
+        return inject.list_processes()
 
 
 # --- Linux (a través de Wine) -----------------------------------------------
@@ -257,6 +266,14 @@ class WineHost(GameHost):
             return self._connect().pids_by_name(name)
         except (WineError, HostUnavailable):
             return set()
+
+    def list_processes(self) -> list[tuple[int, int, str]]:
+        from .winehost import WineError
+
+        try:
+            return self._connect().list_processes()
+        except (WineError, HostUnavailable):
+            return []
 
     def close(self) -> None:
         with self._lock:
