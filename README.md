@@ -76,7 +76,11 @@ Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
   Mientras haya club puesto, el selector de acento se ve pero no se toca.
   Quitarlo devuelve el color que hubiera elegido el usuario, que se guarda
   intacto todo el tiempo.
-- **Accent** — el color propio, de una paleta o a medida.
+- **Accent** — dos filas: arriba la paleta fija, abajo los colores propios. Un
+  color a medida **se guarda al elegirlo** (el botón `+` abre el selector del
+  sistema) y se queda ahí para volver a él; el que esté en uso siempre está
+  guardado, y el resto se olvidan con la `×` que aparece encima. Son ocho
+  huecos: al llenarlos, el más viejo cede el sitio.
 - **Tint strength** — cuánto acento llega al fondo. **No lo bloquea ningún
   tema**: es intensidad, no color, y sigue siendo del usuario aunque el club
   mande en el acento. A 0% la interfaz queda gris neutra.

@@ -1002,6 +1002,25 @@
         box.appendChild(name);
     }
 
+    // Huecos de la fila de acentos propios. Al llenarla, el más viejo cede el
+    // sitio: es preferible a bloquear el botón de añadir y obligar a borrar
+    // antes de poder probar un color.
+    const MAX_CUSTOMS = 8;
+
+    /** Acentos guardados: sólo hex de 6 dígitos, en minúsculas, sin repetidos y
+     *  sin los que ya están en la paleta fija (ahí ya se pueden elegir). */
+    function normalizeCustoms(list) {
+        const presets = ACCENTS.map((a) => a.value.toLowerCase());
+        const seen = [];
+        for (const raw of Array.isArray(list) ? list : []) {
+            const value = String(raw).toLowerCase();
+            if (!/^#[0-9a-f]{6}$/.test(value)) continue;
+            if (presets.includes(value) || seen.includes(value)) continue;
+            seen.push(value);
+        }
+        return seen.slice(-MAX_CUSTOMS);
+    }
+
     const FONTS = {
         system: '"Segoe UI", system-ui, -apple-system, sans-serif',
         quicksand: 'Quicksand, "Segoe UI", system-ui, sans-serif',
@@ -1038,6 +1057,10 @@
         // quitar el tema se vuelve a él sin haber perdido nada.
         const own = (theme && theme.accent) || '#22c55e';
         const accent = club ? CLUBS[club].accent : own;
+        // Un acento a medida en uso queda guardado aunque nunca se pulsara el
+        // botón de añadir: es el que hay puesto, perderlo al probar otro era
+        // justo el problema.
+        const customs = normalizeCustoms((theme && theme.customs || []).concat([own]));
         const stars = !theme || theme.stars !== false;
         const tint = (theme && typeof theme.tint === 'number') ? theme.tint : 0.45;
         const font = (theme && FONTS[theme.font]) ? theme.font : 'system';
@@ -1048,7 +1071,8 @@
         document.documentElement.style.setProperty('--on-accent', readableOn(accent, 0.88));
         document.body.classList.toggle('no-stars', !stars);
         renderBrand({ club: club });
-        return { accent: own, stars: stars, tint: tint, font: font, club: club };
+        return { accent: own, stars: stars, tint: tint, font: font, club: club,
+                 customs: customs };
     }
 
     /** Campo de estrellas como imagen de fondo repetible.
@@ -1075,48 +1099,100 @@
             '--stars', `url("${canvas.toDataURL('image/png')}")`);
     }
 
+    /** Selector de acento en dos filas: arriba la paleta fija, abajo los colores
+     *  que ha guardado el usuario más el botón de añadir.
+     *
+     *  Elegir un color a medida lo guarda: antes vivía sólo en `accent` y se
+     *  perdía en cuanto se probaba otro. */
     function renderThemeControls() {
         const theme = state.theme || { accent: '#22c55e' };
         const box = $('theme-swatches');
-        if (!box) return;
+        const customBox = $('theme-customs');
+        if (!box || !customBox) return;
         const club = clubOf(theme);
         // Con club puesto se enseña SU color, no el guardado: lo que ve el
         // usuario es lo que tiene la interfaz delante.
-        const accent = club ? CLUBS[club].accent : theme.accent;
+        const accent = String(club ? CLUBS[club].accent : theme.accent).toLowerCase();
+        const customs = normalizeCustoms(theme.customs);
         box.classList.toggle('locked', !!club);
+        customBox.classList.toggle('locked', !!club);
         $('accent-locked-note').classList.toggle('hidden', !club);
-        box.innerHTML = '';
-        for (const preset of ACCENTS) {
+
+        /** Aplica un acento y lo persiste. `customs` viaja siempre en el tema,
+         *  así que un color guardado no se pierde al cambiar de acento. */
+        const pick = (value) => {
+            state.theme = applyTheme({ ...state.theme, accent: value });
+            renderThemeControls();
+            call('save_prefs', { theme: state.theme });
+        };
+
+        const swatch = (value, title) => {
             const dot = document.createElement('button');
             dot.type = 'button';
-            dot.className = 'theme-swatch'
-                + (preset.value.toLowerCase() === String(accent).toLowerCase() ? ' active' : '');
-            dot.style.background = preset.value;
-            dot.title = preset.name;
+            dot.className = 'theme-swatch' + (value.toLowerCase() === accent ? ' active' : '');
+            dot.style.background = value;
+            dot.title = title;
             dot.disabled = !!club;
-            dot.addEventListener('click', () => {
-                state.theme = { ...state.theme, accent: preset.value };
-                applyTheme(state.theme);
+            return dot;
+        };
+
+        box.innerHTML = '';
+        for (const preset of ACCENTS) {
+            const dot = swatch(preset.value, preset.name);
+            dot.addEventListener('click', () => pick(preset.value));
+            box.appendChild(dot);
+        }
+
+        customBox.innerHTML = '';
+        for (const value of customs) {
+            const dot = swatch(value, value.toUpperCase() + ' — click to use, × to forget');
+            dot.addEventListener('click', () => pick(value));
+            // La × va DENTRO del botón (un <span>, no otro botón: anidar botones
+            // no es HTML válido) y detiene la propagación para que borrar no
+            // signifique además aplicar.
+            const forget = el('span', 'swatch-x', '&times;');
+            forget.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // El acento en uso no se olvida: se guarda solo mientras esté
+                // puesto (ver applyTheme), así que la × ahí no haría nada.
+                if (club || value.toLowerCase() === accent) return;
+                state.theme = applyTheme({
+                    ...state.theme,
+                    customs: customs.filter((c) => c !== value),
+                });
                 renderThemeControls();
                 call('save_prefs', { theme: state.theme });
             });
-            box.appendChild(dot);
+            dot.appendChild(forget);
+            customBox.appendChild(dot);
         }
-        const custom = document.createElement('input');
-        custom.type = 'color';
-        custom.className = 'theme-custom';
-        custom.value = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#22c55e';
-        custom.title = 'Custom colour';
-        custom.disabled = !!club;
-        custom.addEventListener('input', () => {
-            state.theme = { ...state.theme, accent: custom.value };
-            applyTheme(state.theme);
+
+        // Botón de añadir: una casilla de puntos con un «+» y, encima e
+        // invisible, el selector nativo de color, que es quien abre el diálogo.
+        const adder = el('label', 'theme-add', '<span>+</span>');
+        adder.title = customs.length >= MAX_CUSTOMS
+            ? `Saves a new colour and forgets the oldest (${MAX_CUSTOMS} slots)`
+            : 'Save a custom colour';
+        const picker = document.createElement('input');
+        picker.type = 'color';
+        picker.value = /^#[0-9a-f]{6}$/.test(accent) ? accent : '#22c55e';
+        picker.disabled = !!club;
+        // Mientras se mueve por el diálogo se ve el resultado en vivo; sólo al
+        // aceptarlo (change) se guarda, para no llenar la fila de tanteos.
+        picker.addEventListener('input', () => {
+            applyTheme({ ...state.theme, accent: picker.value });
         });
-        custom.addEventListener('change', () => {
+        picker.addEventListener('change', () => {
+            state.theme = applyTheme({
+                ...state.theme,
+                accent: picker.value,
+                customs: customs.concat([picker.value]),
+            });
             renderThemeControls();
             call('save_prefs', { theme: state.theme });
         });
-        box.appendChild(custom);
+        adder.appendChild(picker);
+        customBox.appendChild(adder);
     }
 
     // --- panel de ajustes -------------------------------------------------

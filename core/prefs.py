@@ -68,11 +68,12 @@ DEFAULTS = {
     "custom_dirs": [],
     "reparent_glyph": False,
     "hide_emails": True,
-    # Apariencia: acento, partículas del fondo, familia tipográfica
-    # ("system" | "quicksand" | "comfortaa") y tema de club
+    # Apariencia: acento, acentos propios guardados, partículas del fondo,
+    # familia tipográfica ("system" | "quicksand" | "comfortaa") y tema de club
     # ("" | "mystic-cave" | "arsyn" | "sayro"), que fija el acento mientras
     # esté puesto.
-    "theme": {"accent": "#22c55e", "stars": True, "font": "system", "club": ""},
+    "theme": {"accent": "#22c55e", "customs": [], "stars": True,
+              "font": "system", "club": ""},
 }
 
 
