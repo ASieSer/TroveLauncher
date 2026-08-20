@@ -64,10 +64,30 @@ else:
          "     Using a virtualenv? Create it with --system-site-packages:\n"
          "     `gi` is a system package and a plain venv does NOT see it.")
 
-# --- lanzar el juego -------------------------------------------------------
-from core import winehost  # noqa: E402
+# --- el juego --------------------------------------------------------------
+from core import installs, prefs, winehost  # noqa: E402
 
-wine = winehost.find_wine()
+found = installs.detect()
+if found:
+    line("game installs", f"{len(found)} found", True)
+    for item in found:
+        print(f"     · [{item['kind']}] {item['path']}")
+else:
+    line("game installs", "none detected", False)
+    fail("Trove was not found. It is looked for inside Proton prefixes\n"
+         "     (steamapps/compatdata/*/pfx) and Wine ones (~/.wine, Lutris,\n"
+         "     Bottles). If yours lives elsewhere, add it by hand from the app.")
+
+# El prefijo manda sobre el runner: dentro de un prefijo de Proton se lanza con
+# ese Proton, así que hay que saber cuál es antes de preguntar por el Wine.
+data = prefs.load()
+chosen = data.get("game_path") or (found[0]["path"] if found else "")
+prefix = winehost.prefix_for(Path(chosen) if chosen else None,
+                             data.get("wine_prefix", ""))
+line("prefix", prefix)
+
+# --- con qué se lanza ------------------------------------------------------
+wine = winehost.find_wine(data.get("wine_binary", ""), prefix)
 line("wine", wine or "not found", bool(wine))
 if not wine:
     fail("sudo apt install wine64      (or point at your Wine in Settings → Wine)")
@@ -79,6 +99,29 @@ else:
     except (OSError, subprocess.SubprocessError):
         line("wine version", "not answering", False)
         fail("Wine is installed but will not run; try `wine --version` by hand.")
+
+runners = winehost.find_proton_runners()
+if runners:
+    line("proton found", f"{len(runners)} runner(s)", True)
+    for runner in runners:
+        mark = " ← in use" if runner["wine"] == wine else ""
+        print(f"     · {runner['name']}: {runner['wine']}{mark}")
+
+# El fallo que se lleva por delante los lanzamientos en Linux sin que nada lo
+# explique: el loader del anti-cheat importa un símbolo que este Wine no tiene,
+# el juego no llega ni a abrirse y el launcher se queda en «Logging in».
+if wine and winehost.missing_loader_symbol(wine):
+    line(f"{winehost.LOADER_SYMBOL}", "MISSING from this Wine", False)
+    fail(f"This Wine build does not export {winehost.LOADER_SYMBOL}, which\n"
+         "     Trove's anti-cheat loader imports: it dies with a «procedure entry\n"
+         "     point» dialog and the game never starts.\n"
+         + ("     Use one of the Proton runners listed above: set it in\n"
+            "     Settings → Wine, or install the game inside a Proton prefix."
+            if runners else
+            "     Install Proton from Steam (any recent version ships it) and\n"
+            "     point Settings → Wine at its …/files/bin/wine."))
+elif wine:
+    line(f"{winehost.LOADER_SYMBOL}", "present", True)
 
 # --- secretos --------------------------------------------------------------
 from core import vault  # noqa: E402
@@ -93,20 +136,6 @@ if not status["available"]:
          "     will have to sign in again on every start. On a normal desktop\n"
          "     (GNOME, KDE) this is already sorted.")
 
-# --- el juego --------------------------------------------------------------
-from core import installs  # noqa: E402
-
-found = installs.detect()
-if found:
-    line("game installs", f"{len(found)} found", True)
-    for item in found:
-        print(f"     · [{item['kind']}] {item['path']}")
-else:
-    line("game installs", "none detected", False)
-    fail("Trove was not found. It is looked for inside Proton prefixes\n"
-         "     (steamapps/compatdata/*/pfx) and Wine ones (~/.wine, Lutris,\n"
-         "     Bottles). If yours lives elsewhere, add it by hand from the app.")
-
 # --- el ayudante, DE VERDAD ------------------------------------------------
 #
 # Que el fichero exista no significa que Wine pueda ejecutarlo: el prefijo puede
@@ -119,15 +148,6 @@ if not helper.is_file():
          f"     binary was deleted, rebuild it with tools/build_helper.sh "
          f"(needs mingw-w64).")
 elif wine:
-    from core import prefs  # noqa: E402
-
-    # El prefijo que importa es el de la instalación ELEGIDA en la aplicación,
-    # no el de la primera que se detecte: son sitios distintos y el juego sólo
-    # existe dentro del suyo.
-    data = prefs.load()
-    chosen = data.get("game_path") or (found[0]["path"] if found else "")
-    game = Path(chosen) if chosen else None
-    prefix = winehost.prefix_for(game, data.get("wine_prefix", ""))
     if chosen:
         print(f"     · launching from {chosen}")
     probe = winehost.WineHelper(wine=wine, prefix=prefix, log=lambda *a: None)

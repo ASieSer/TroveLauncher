@@ -166,11 +166,13 @@
         <summary><h3>Wine</h3></summary>
         <div class="section-body">
             <p class="note" id="wine-status"></p>
+            <p class="note bad hidden" id="wine-warning"></p>
             <div class="field">
                 <label for="wine-binary">Wine binary</label>
                 <input type="text" id="wine-binary" spellcheck="false"
-                       placeholder="Auto-detected (wine)">
+                       placeholder="Auto-detected (the prefix's runner)">
             </div>
+            <div id="wine-runners"></div>
             <div class="field">
                 <label for="wine-prefix">Wine prefix</label>
                 <input type="text" id="wine-prefix" spellcheck="false"
@@ -179,9 +181,10 @@
             <p class="note">Trove is a Windows game, so on Linux it lives inside a Wine or
                 Proton prefix and can only be handed its ticket from in there. Leave both
                 empty and they are worked out on their own: the prefix from the game folder
-                you picked, the binary from your PATH. Point them somewhere else to use a
-                different runner — Proton's own <em>wine</em> lives under
-                <em>dist/bin/wine</em>.</p>
+                you picked, and the runner from that prefix — a Proton prefix is launched
+                with its own Proton, which is also the build that carries what Trove's
+                anti-cheat loader needs. Only if the prefix says nothing does the Wine in
+                your PATH get used.</p>
         </div>
     </details>
 

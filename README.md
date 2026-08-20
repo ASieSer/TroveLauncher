@@ -33,6 +33,11 @@ sudo apt install python3-gi gir1.2-webkit2-4.1
 sudo apt install wine64
 ```
 
+> **Mejor con Proton.** Si el juego está instalado dentro de un prefijo de
+> Proton, la aplicación lo lanza con el Proton de ese prefijo sin que haya que
+> decirle nada, y hace bien: al Wine del sistema le suele faltar un símbolo que
+> el anti-cheat de Trove necesita — ver [Linux](#linux).
+
 > **Si usas un entorno virtual, créalo con `--system-site-packages`.** `gi` es
 > un paquete del sistema y un venv normal no lo ve, así que la ventana no
 > abriría:
@@ -102,6 +107,22 @@ repetir «2 running» ahí no dice de quién es ni deja actuar sobre ello. Lo ú
 global es el recuento del encabezado y los mensajes de operación de la barra
 inferior, donde también está la versión.
 
+#### Lanzar y volver a entrar
+
+- **«Launch all» lanza de una en una.** Las cuentas se preparan a la vez
+  (actualizar, autenticar), pero **arrancan en fila y con un respiro entre
+  ellas**. Con el loader del anti-cheat por medio, el pid del juego hay que
+  salir a buscarlo entre los procesos y lo único que lo distingue es que antes no
+  estaba: dos arranques simultáneos se adjudican el mismo Trove y acaban con una
+  partida sin vigilar y otra mostrada con el nombre de la vecina. Y una carpeta
+  se actualiza una vez, no una por cuenta.
+- **Auto-relog, por cuenta, con el botón del bucle.** Vuelve a entrar cuando la
+  partida termina, **se haya caído o se haya cerrado con normalidad**: que te
+  echen por inactividad cierra el juego limpiamente y es justo la vez que uno
+  quiere volver. No se relanza lo que cierras tú desde el launcher, ni lo que se
+  muere nada más arrancar. Si la caída dejó abierta la ventana de reporte de
+  fallos de Trove, se cierra con la partida.
+
 #### Apariencia
 
 Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
@@ -157,8 +178,17 @@ mismas razones. Detalles que importan:
 - **El prefijo se deduce de la ruta del juego.** Un prefijo distinto es
   literalmente otro disco C:, donde el juego no existe. Si la instalación cuelga
   de `…/compatdata/<appid>/pfx/drive_c/…`, ése es el prefijo. Se puede forzar
-  otro en Ajustes → Wine, junto con el binario de Wine (para usar el de Proton,
-  que vive en `…/dist/bin/wine`).
+  otro en Ajustes → Wine.
+- **Y el prefijo elige el runner.** Si es de Proton, se lanza con *ese* Proton
+  —el que lo creó, que Steam apunta en `config_info` y en `version`— y no con el
+  Wine del PATH. No es un capricho: el loader del anti-cheat importa
+  `WSCEnumProtocols32` de `ws2_32`, y **el Wine del sistema no siempre exporta
+  ese símbolo**. Cuando falta, el loader muere con un «procedure entry point
+  could not be located», el juego no llega a abrirse y el launcher se queda en
+  *Logging in* sin que nada explique por qué. Proton sí lo trae. Los Proton
+  instalados se listan en Ajustes → Wine para elegir uno con un clic, y si el
+  runner en uso no tiene el símbolo se avisa **antes** de lanzar (también lo dice
+  `tools/check_linux.py`).
 - **Las instalaciones se buscan dentro de los prefijos**: los de Proton bajo
   `steamapps/compatdata/*/pfx`, y los de Wine al uso (`~/.wine`, Lutris,
   Bottles). Dentro, la estructura es la de Windows.
@@ -264,6 +294,8 @@ No hay framework: son guiones sueltos, sin dependencias salvo donde se indica.
 | `tools/test_vault.py` | El almacén de secretos y su degradación sin llavero. |
 | `tools/test_paths_adopt.py` | La adopción de la carpeta de datos anterior. |
 | `tools/test_installs_prefix.py` | Encontrar Trove dentro de prefijos de Proton y Wine (necesita mingw-w64). |
+| `tools/test_proton_runner.py` | Elegir el runner del prefijo y avisar del símbolo que le falta al Wine del sistema. |
+| `tools/test_launch_order.py` | Que «Launch all» reparta una partida por cuenta y que el auto-relog haga lo que dice. |
 | `tools/test_wine_helper.py` | La entrega del ticket de extremo a extremo bajo Wine (necesita wine64 y mingw-w64). |
 | `tools/check_linux.py` | No es una prueba: comprueba que ESTE equipo está listo para usarla en Linux. |
 

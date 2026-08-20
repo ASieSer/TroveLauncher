@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import base64
 import collections
+import functools
 import os
+import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from .paths import base_dir
@@ -41,19 +44,189 @@ def helper_path() -> Path:
     return base_dir() / "native" / HELPER_NAME
 
 
-def find_wine(preferred: str = "") -> str:
-    """Binario de Wine a usar. Vacío si no hay ninguno.
+# El símbolo que el loader del anti-cheat de Trove importa de ws2_32 y que Wine
+# no siempre exporta. Cuando falta, el loader ni siquiera arranca: sale un
+# «The procedure entry point ... could not be located» y el juego no aparece.
+# Proton sí lo trae, y por eso se prefiere (ver find_wine).
+LOADER_SYMBOL = "WSCEnumProtocols32"
 
-    Se admite que el usuario apunte al suyo (el de Proton, por ejemplo, que vive
-    en ``…/dist/bin/wine``); si no, el del sistema.
+
+def _executable(candidate: str) -> str:
+    """La ruta de un binario ejecutable, buscándolo en el PATH si hace falta."""
+    if not candidate:
+        return ""
+    found = shutil.which(candidate)
+    if found:
+        return str(found)
+    path = Path(candidate)
+    return str(path) if path.is_file() and os.access(path, os.X_OK) else ""
+
+
+def _version_key(name: str) -> tuple:
+    """Para ordenar Proton por versión: los números del nombre, de mayor a menor."""
+    return tuple(int(n) for n in re.findall(r"\d+", name)) or (0,)
+
+
+# La búsqueda de runners toca disco y la interfaz pregunta el estado a menudo:
+# se recuerda un rato. Un Proton recién instalado tarda eso en aparecer, que para
+# algo que se instala una vez al año es un precio razonable.
+_RUNNER_TTL = 60.0
+_runner_cache: tuple[float, list[dict]] = (0.0, [])
+
+
+def find_proton_runners(fresh: bool = False) -> list[dict]:
+    """Los Proton instalados en este equipo, del más nuevo al más viejo.
+
+    Cada uno es ``{"name", "wine"}``. Se miran los dos sitios donde acaban: los
+    Proton oficiales, dentro de las bibliotecas de Steam, y los de la comunidad
+    (GE-Proton y demás), en ``compatibilitytools.d``. El binario está en
+    ``files/bin/wine`` desde Proton 5.13 y en ``dist/bin/wine`` en los anteriores.
     """
-    for candidate in (preferred, os.environ.get("WINE", ""), "wine", "wine64"):
-        if not candidate:
+    global _runner_cache
+    from . import installs
+
+    stamp, cached = _runner_cache
+    if not fresh and time.monotonic() - stamp < _RUNNER_TTL:
+        return cached
+
+    roots: list[Path] = []
+    for steam in installs._steam_roots():
+        for library in [steam] + installs._steam_library_paths(steam):
+            roots.append(library / "steamapps" / "common")
+        roots.append(steam / "compatibilitytools.d")
+    roots.append(Path.home() / ".steam" / "root" / "compatibilitytools.d")
+
+    found: dict[str, dict] = {}
+    for root in roots:
+        try:
+            children = sorted(root.iterdir())
+        except OSError:
             continue
-        found = shutil.which(candidate) or (candidate if Path(candidate).is_file() else "")
-        if found:
-            return str(found)
+        for child in children:
+            if root.name == "common" and not child.name.lower().startswith("proton"):
+                continue
+            wine = _proton_wine(child)
+            if wine and wine not in found:
+                found[wine] = {"name": child.name, "wine": wine}
+    runners = sorted(found.values(),
+                     key=lambda r: _version_key(r["name"]), reverse=True)
+    _runner_cache = (time.monotonic(), runners)
+    return runners
+
+
+def _proton_wine(install: Path) -> str:
+    """El binario de wine dentro de una carpeta de Proton, si lo hay."""
+    for relative in ("files/bin/wine", "dist/bin/wine",
+                     "files/bin/wine64", "dist/bin/wine64"):
+        candidate = install / relative
+        if candidate.is_file():
+            return str(candidate)
     return ""
+
+
+def proton_for_prefix(prefix: str | os.PathLike) -> str:
+    """El Proton que hizo ese prefijo, si el prefijo lo dice.
+
+    Un prefijo de Proton no es un prefijo de Wine cualquiera: lo creó un runner
+    concreto, y Steam deja constancia de cuál en ``config_info`` (rutas dentro
+    del propio Proton) y en ``version`` (su nombre). Usar ese mismo runner evita
+    la mitad de los problemas —empezando por el «wineserver version mismatch»— y
+    trae de vuelta lo que el Wine del sistema no tiene.
+    """
+    compat = Path(prefix)
+    if compat.name == "pfx":
+        compat = compat.parent
+    if compat.parent.name != "compatdata":
+        return ""
+
+    try:
+        info = (compat / "config_info").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        info = ""
+    for line in info.splitlines():
+        for marker in ("/files/", "/dist/"):
+            head, sep, _rest = line.partition(marker)
+            if sep and head:
+                wine = _proton_wine(Path(head))
+                if wine:
+                    return wine
+
+    try:
+        version = (compat / "version").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    wanted = version.split()[-1].lower() if version.split() else ""
+    if not wanted:
+        return ""
+    for runner in find_proton_runners():
+        name = runner["name"].lower()
+        if wanted in name or name.replace(" ", "-") in wanted:
+            return runner["wine"]
+    return ""
+
+
+def find_wine(preferred: str = "", prefix: str = "") -> str:
+    """Binario de Wine a usar para ese prefijo. Vacío si no hay ninguno.
+
+    Manda lo que diga el usuario. Después, el runner del propio prefijo: si el
+    juego vive dentro de un prefijo de Proton, el Wine que le corresponde es ese
+    Proton y no el del sistema —que además de no haber hecho el prefijo, es el
+    que se queda sin ``WSCEnumProtocols32`` y deja al anti-cheat sin arrancar.
+    Y si no hay ni una cosa ni la otra, el del sistema; y si tampoco, cualquier
+    Proton que haya por aquí, que es mejor que nada.
+    """
+    for candidate in (preferred, os.environ.get("WINE", "")):
+        found = _executable(candidate)
+        if found:
+            return found
+    if prefix:
+        proton = proton_for_prefix(prefix)
+        if proton:
+            return proton
+    for candidate in ("wine", "wine64"):
+        found = _executable(candidate)
+        if found:
+            return found
+    runners = find_proton_runners()
+    return runners[0]["wine"] if runners else ""
+
+
+@functools.lru_cache(maxsize=8)
+def missing_loader_symbol(wine: str) -> bool:
+    """¿Le falta a este Wine lo que el anti-cheat de Trove le va a pedir?
+
+    ``ws2_32.dll`` es una DLL de Wine, no del prefijo, así que la respuesta está
+    en el propio runner. Se busca el nombre del símbolo dentro del archivo: en un
+    PE los nombres exportados están ahí en texto plano, y para lo que hace falta
+    aquí —avisar antes de que el usuario se coma un diálogo de error en chino—
+    eso basta. Ante la duda (no encontramos la DLL), se calla.
+    """
+    dll = _ws2_32_of(wine)
+    if not dll:
+        return False
+    try:
+        return LOADER_SYMBOL.encode("ascii") not in dll.read_bytes()
+    except OSError:
+        return False
+
+
+def _ws2_32_of(wine: str) -> Path | None:
+    """El ws2_32.dll que usaría ese binario de wine."""
+    if not wine:
+        return None
+    root = Path(wine).resolve().parent.parent      # …/bin/wine -> …
+    for pattern in ("lib/wine/x86_64-windows/ws2_32.dll",
+                    "lib64/wine/x86_64-windows/ws2_32.dll",
+                    "lib/*/wine/x86_64-windows/ws2_32.dll"):
+        for candidate in root.glob(pattern):
+            if candidate.is_file():
+                return candidate
+    # Wine del sistema: el binario está en /usr/bin y las DLL cuelgan de la
+    # carpeta de arquitectura, que varía según la distribución.
+    for candidate in root.glob("lib*/*/wine/x86_64-windows/ws2_32.dll"):
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def prefix_for(game_path: str | os.PathLike | None, preferred: str = "") -> str:

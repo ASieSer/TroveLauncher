@@ -1255,11 +1255,17 @@
         if (wine) {
             const status = $('wine-status');
             status.textContent = host.ready
-                ? 'Ready: the game will be launched inside its prefix.'
+                ? 'Launching with ' + (host.binary || 'wine') + ' in ' + (host.prefix || '?')
                 : host.detail;
             status.classList.toggle('bad', !host.ready);
+            // Un aviso no es un impedimento: se puede lanzar igual, pero con
+            // este runner el anti-cheat no va a arrancar. Ver WineHost.status.
+            const warning = $('wine-warning');
+            warning.textContent = host.warning || '';
+            warning.classList.toggle('hidden', !host.warning);
             $('wine-binary').value = state.wine_binary || '';
             $('wine-prefix').value = state.wine_prefix || '';
+            renderWineRunners(host);
         }
 
         const vault = state.vault || {};
@@ -1278,6 +1284,33 @@
                 + 'remembered and your session will have to be signed in again on every '
                 + 'start. Nothing is ever written unencrypted.';
             note.classList.add('bad');
+        }
+    }
+
+    /** Los Proton que hay instalados, para elegir uno sin teclear la ruta. */
+    function renderWineRunners(host) {
+        const box = $('wine-runners');
+        box.innerHTML = '';
+        const runners = host.runners || [];
+        if (!runners.length) return;
+        const title = el('p', 'note');
+        title.textContent = 'Proton found on this machine:';
+        box.appendChild(title);
+        for (const runner of runners) {
+            const row = el('button', 'runner-row'
+                + (runner.wine === host.binary ? ' active' : ''));
+            const name = el('span'); name.textContent = runner.name;
+            const path = el('small'); path.textContent = runner.wine;
+            row.append(name, path);
+            row.addEventListener('click', async () => {
+                // Vaciar el campo vuelve a la elección automática; pulsar aquí
+                // es lo contrario: fijar ESTE runner y que no se mueva.
+                state.wine_binary = runner.wine;
+                $('wine-binary').value = runner.wine;
+                await call('save_prefs', { wine_binary: runner.wine });
+                refresh();
+            });
+            box.appendChild(row);
         }
     }
 

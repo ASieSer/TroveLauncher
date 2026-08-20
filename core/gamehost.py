@@ -69,7 +69,11 @@ class GameHost:
         pass
 
     def status(self) -> dict:
-        """Para la interfaz: si se puede jugar y, si no, por qué."""
+        """Para la interfaz: si se puede jugar y, si no, por qué.
+
+        ``warning`` es para lo que se puede lanzar pero probablemente salga mal,
+        que no es lo mismo que no poder: ver ``WineHost.status``.
+        """
         try:
             self.check()
             return {"kind": self.kind, "ready": True, "detail": ""}
@@ -172,12 +176,18 @@ class WineHost(GameHost):
         self._lock = threading.Lock()
 
     # -- configuración --
-    def _settings(self) -> tuple[str, str]:
+    def _settings(self, game_exe: Path | None = None) -> tuple[str, str]:
+        """(binario de wine, prefijo) para lanzar ese juego.
+
+        El prefijo se resuelve PRIMERO porque es quien decide el runner: dentro
+        de un prefijo de Proton, el Wine que toca es el de ese Proton.
+        """
         from . import winehost
 
         data = prefs.load()
-        wine = winehost.find_wine(data.get("wine_binary", ""))
-        prefix = data.get("wine_prefix", "")
+        game = game_exe or data.get("game_path") or None
+        prefix = winehost.prefix_for(game, data.get("wine_prefix", ""))
+        wine = winehost.find_wine(data.get("wine_binary", ""), prefix)
         return wine, prefix
 
     def check(self) -> None:
@@ -193,6 +203,34 @@ class WineHost(GameHost):
                 f"{winehost.HELPER_NAME} is missing. Build it with "
                 f"tools/build_helper.sh.")
 
+    def status(self) -> dict:
+        """Lo de siempre, más con qué se va a lanzar y qué Proton hay a mano.
+
+        Aparte va ``warning``: el Wine elegido arranca, pero le falta el símbolo
+        que el loader del anti-cheat importa, así que el juego no llegaría a
+        abrirse. Es un aviso y no un impedimento —quien quiera intentarlo, que lo
+        intente— pero se dice ANTES, no después de un diálogo de error a medio
+        traducir.
+        """
+        from . import winehost
+
+        info = super().status()
+        wine, prefix = self._settings()
+        runners = winehost.find_proton_runners()
+        info.update({"binary": wine, "prefix": prefix, "runners": runners})
+        if info["ready"] and winehost.missing_loader_symbol(wine):
+            info["warning"] = (
+                f"This Wine ({wine}) does not have {winehost.LOADER_SYMBOL}, which "
+                f"Trove's anti-cheat loader asks for: the loader shows a "
+                f"«procedure entry point» error and the game never starts. "
+                + ("Pick one of the Proton runners below — they ship it."
+                   if runners else
+                   "Install Proton from Steam (any recent version ships it) and "
+                   "point Wine binary at its …/files/bin/wine."))
+        else:
+            info["warning"] = ""
+        return info
+
     def _connect(self, game_exe: Path | None = None):
         from . import winehost
 
@@ -200,8 +238,7 @@ class WineHost(GameHost):
             if self._helper is not None and self._helper.alive:
                 return self._helper
             self.check()
-            wine, configured = self._settings()
-            prefix = winehost.prefix_for(game_exe, configured)
+            wine, prefix = self._settings(game_exe)
 
             # Un intento y un reintento. Wine falla de vez en cuando al arrancar
             # sobre un prefijo que se está inicializando o cuyo wineserver
