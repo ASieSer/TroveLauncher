@@ -19,15 +19,15 @@ zona «sin grupo».
 Seguridad de las contraseñas
 ----------------------------
 
-Se cifran con DPAPI de Windows (CryptProtectData, ámbito de usuario): sólo este
-usuario en esta máquina puede descifrarlas, sin servidor ni clave en la app.
-Añadimos entropía propia como defensa adicional y —a diferencia del ticket—
-NUNCA caemos a texto plano: si DPAPI no está disponible, no se recuerda nada.
+Ni la contraseña ni el ticket se guardan aquí: van al almacén de secretos del
+sistema (ver ``vault.py``) — DPAPI en Windows, el llavero del escritorio en
+Linux. Si no hay ninguno de los dos, NUNCA caemos a texto plano: sencillamente
+no se recuerda nada.
 
-Cada cuenta guarda su ticket y su contraseña en ficheros separados, nombrados
-con un hash del email (sólo como discriminador de nombre de fichero, jamás como
-comprobación de integridad o autenticación), para que varias cuentas de Glyph
-puedan estar activas a la vez.
+Cada cuenta guarda su ticket y su contraseña bajo claves separadas, nombradas
+con un hash del email (sólo como discriminador, jamás como comprobación de
+integridad o autenticación), para que varias cuentas de Glyph puedan estar
+activas a la vez.
 """
 
 from __future__ import annotations
@@ -40,10 +40,13 @@ import threading
 import uuid
 from pathlib import Path
 
-from . import trionauth
+from . import vault as vault_mod
 from .paths import app_data_dir, prefs_path
 
-# Entropía específica de la app para el cifrado DPAPI de las credenciales.
+# Entropía específica de la app para el cifrado DPAPI de las credenciales. Sólo
+# la usa el almacén de Windows; es un identificador fijo y no un nombre a la
+# vista, así que no sigue a la aplicación cuando ésta se renombra: cambiarlo
+# dejaría ilegibles las contraseñas ya guardadas.
 _CRED_ENTROPY = b"TroveLauncher.credentials.v1"
 
 _LOCK = threading.RLock()
@@ -233,16 +236,18 @@ def display_name(email: str) -> str:
 # --- rutas por cuenta -------------------------------------------------------
 
 
-def auth_cache_path(email: str = "") -> Path:
-    if email:
-        return app_data_dir() / f"auth-{_email_hash(email)}.bin"
-    return app_data_dir() / "auth_cache.bin"
+def auth_key(email: str = "") -> str:
+    """Clave del ticket en el almacén de secretos.
+
+    En Windows es además el nombre del fichero que ya existía
+    (``auth-<hash>.bin``), para que actualizar no pierda la sesión de nadie.
+    """
+    return f"auth-{_email_hash(email)}" if email else "auth_cache"
 
 
-def cred_path(email: str = "") -> Path:
-    if email:
-        return app_data_dir() / f"cred-{_email_hash(email)}.bin"
-    return app_data_dir() / "credentials.bin"
+def cred_key(email: str = "") -> str:
+    """Clave de la contraseña en el almacén de secretos."""
+    return f"cred-{_email_hash(email)}" if email else "credentials"
 
 
 def update_db_path(branch: str, game_dir: Path) -> Path:
@@ -318,7 +323,7 @@ def remove_account(email: str) -> None:
     email = (email or "").strip()
     clear_credentials(email)
     try:
-        auth_cache_path(email).unlink(missing_ok=True)
+        vault_mod.vault().delete(auth_key(email))
     except OSError:
         pass
     with _LOCK:
@@ -425,26 +430,22 @@ def reorder_accounts(order: list) -> None:
 
 
 def save_credentials(email: str, password: str) -> bool:
+    """Guarda la contraseña en el almacén del sistema. False = no se guardó.
+
+    Sin almacén no hay guardado: preferimos que el usuario tenga que reescribir
+    la contraseña a dejarla legible en el disco.
+    """
     if not password:
         return False
     raw = json.dumps({"email": email or "", "password": password}).encode("utf-8")
-    try:
-        blob = trionauth.dpapi_protect(raw, _CRED_ENTROPY)
-    except Exception:
-        return False  # sin DPAPI no guardamos la contraseña en claro
-    try:
-        cred_path(email).write_bytes(blob)
-        return True
-    except OSError:
-        return False
+    return vault_mod.vault().set(cred_key(email), raw, _CRED_ENTROPY)
 
 
 def load_credentials(email: str = "") -> dict | None:
-    path = cred_path(email)
-    if not path.exists():
+    raw = vault_mod.vault().get(cred_key(email), _CRED_ENTROPY)
+    if not raw:
         return None
     try:
-        raw = trionauth.dpapi_unprotect(path.read_bytes(), _CRED_ENTROPY)
         return json.loads(raw.decode("utf-8"))
     except Exception:
         return None
@@ -452,7 +453,7 @@ def load_credentials(email: str = "") -> dict | None:
 
 def clear_credentials(email: str = "") -> None:
     try:
-        cred_path(email).unlink(missing_ok=True)
+        vault_mod.vault().delete(cred_key(email))
     except OSError:
         pass
 

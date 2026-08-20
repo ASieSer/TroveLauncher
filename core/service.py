@@ -234,7 +234,7 @@ class LauncherService:
         return trionauth.TrionAuth(
             username=email or "", password=password or "",
             channel=GLYPH_CHANNEL, user_agent=GLYPH_USER_AGENT,
-            cache_path=prefs.auth_cache_path(email),
+            cache_key=prefs.auth_key(email),
             macaddr_path=macaddr_path(),
             log=self._log,
         )

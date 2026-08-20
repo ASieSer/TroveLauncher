@@ -4,22 +4,26 @@ POST https://auth.trionworlds.com/auth/v1_2  (form-encoded, Glyph UA)
   -> body containing "Signature:" IS the ticket.
 2FA (if ever demanded) via /multiauth/v1_2; keep-alive via /touch/v1_2.
 
-The ticket is a live credential, so the on-disk cache is encrypted with Windows
-DPAPI (CryptProtectData, user scope) reached through ctypes - no extra deps.
+The ticket is a live credential, so it never touches the disk in the clear: it
+goes to the platform secret store (``vault.py``) — DPAPI on Windows, the
+desktop keyring on Linux. With no store available the ticket simply stays in
+memory for this session.
 """
 
 from __future__ import annotations
 
-import ctypes
 import json
 import re
 import secrets
 import time
-from ctypes import wintypes
 from pathlib import Path
 from typing import Callable
 
 import requests
+
+# `secrets` de la stdlib (arriba) y nuestro `vault` son cosas distintas: el
+# primero genera aleatoriedad, el segundo guarda credenciales.
+from . import vault as vault_mod
 
 AUTH_HOST = "https://auth.trionworlds.com"
 # The server expires a ticket ~48h after it's issued, so we mint a brand-new one
@@ -36,51 +40,6 @@ class AuthError(RuntimeError):
 
 class TwoFactorRequired(AuthError):
     pass
-
-
-# --- DPAPI (ctypes) ---------------------------------------------------------
-
-
-class _DataBlob(ctypes.Structure):
-    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
-
-
-def _blob(data: bytes) -> _DataBlob:
-    buf = ctypes.create_string_buffer(data, len(data))
-    return _DataBlob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
-
-
-def _blob_bytes(blob: _DataBlob) -> bytes:
-    return ctypes.string_at(blob.pbData, blob.cbData)
-
-
-def dpapi_protect(data: bytes, entropy: bytes | None = None) -> bytes:
-    ent = ctypes.byref(_blob(entropy)) if entropy else None
-    out = _DataBlob()
-    if not ctypes.windll.crypt32.CryptProtectData(
-        ctypes.byref(_blob(data)), None, ent, None, None, 0, ctypes.byref(out)
-    ):
-        raise ctypes.WinError()
-    try:
-        return _blob_bytes(out)
-    finally:
-        ctypes.windll.kernel32.LocalFree(out.pbData)
-
-
-def dpapi_unprotect(data: bytes, entropy: bytes | None = None) -> bytes:
-    ent = ctypes.byref(_blob(entropy)) if entropy else None
-    out = _DataBlob()
-    if not ctypes.windll.crypt32.CryptUnprotectData(
-        ctypes.byref(_blob(data)), None, ent, None, None, 0, ctypes.byref(out)
-    ):
-        raise ctypes.WinError()
-    try:
-        return _blob_bytes(out)
-    finally:
-        ctypes.windll.kernel32.LocalFree(out.pbData)
-
-
-# --- ticket text helpers ----------------------------------------------------
 
 
 def _strip_cr(ticket: str) -> str:
@@ -129,12 +88,12 @@ def is_valid_ticket(body: str, error_header: str | None) -> bool:
 
 class TrionAuth:
     def __init__(self, *, username: str, password: str, channel: str, user_agent: str,
-                 cache_path: Path, macaddr_path: Path, log=print):
+                 cache_key: str, macaddr_path: Path, log=print):
         self._username = username
         self._password = password
         self._channel = channel
         self._ua = user_agent
-        self._cache_path = Path(cache_path)
+        self._cache_key = cache_key
         self._macaddr_path = Path(macaddr_path)
         self._log = log
         self._session = requests.Session()
@@ -165,15 +124,16 @@ class TrionAuth:
         return body
 
     # -- cache --
+    #
+    # El ticket va al almacén de secretos del sistema, nunca a un fichero
+    # nuestro. Si no hay almacén, `set` devuelve False y el ticket se queda
+    # sólo en memoria: se vuelve a pedir en el siguiente arranque, que es
+    # molesto pero es lo correcto para una credencial viva.
     def _load_cache(self) -> dict | None:
-        if not self._cache_path.exists():
+        raw = vault_mod.vault(self._log).get(self._cache_key)
+        if not raw:
             return None
         try:
-            raw = self._cache_path.read_bytes()
-            try:
-                raw = dpapi_unprotect(raw)
-            except OSError:
-                pass  # was written in plaintext fallback
             rec = json.loads(raw.decode("utf-8"))
             return rec if rec.get("ticket") else None
         except Exception as e:
@@ -184,14 +144,12 @@ class TrionAuth:
         rec = {"ticket": _strip_cr(ticket),
                "minted": minted if minted is not None else time.time()}
         raw = json.dumps(rec).encode("utf-8")
-        try:
-            raw = dpapi_protect(raw)
-        except OSError as e:
-            self._log(f"[auth] DPAPI unavailable, storing plaintext: {e}")
-        self._cache_path.write_bytes(raw)
+        if not vault_mod.vault(self._log).set(self._cache_key, raw):
+            self._log("[auth] sin almacén de secretos: el ticket se queda en "
+                      "memoria y habrá que volver a entrar en el próximo arranque")
 
     def _invalidate(self) -> None:
-        self._cache_path.unlink(missing_ok=True)
+        vault_mod.vault(self._log).delete(self._cache_key)
 
     # -- network --
     def _authenticate(self, token_provider: Callable[[], str] | None) -> str:

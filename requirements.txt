@@ -1,2 +1,5 @@
 pywebview
 requests
+# Llavero del escritorio: es donde van la contraseña y el ticket fuera de
+# Windows (en Windows ese papel lo hace DPAPI, que no necesita paquete).
+keyring; sys_platform != "win32"
