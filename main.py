@@ -133,10 +133,15 @@ def main() -> int:
         # pywebview. Decirlo con su nombre ahorra media hora de rastreo.
         if sys.platform != "win32":
             print(f"No se pudo abrir la ventana: {exc}\n\n"
-                  f"En Linux pywebview necesita WebKitGTK. En Debian/Ubuntu:\n"
-                  f"  sudo apt install python3-gi gir1.2-webkit2-4.1 "
-                  f"libcairo2-dev\n"
-                  f"  pip install pywebview[gtk]", file=sys.stderr)
+                  f"En Linux pywebview necesita un motor detrás. Dos opciones:\n\n"
+                  f"  · WebKitGTK, el del sistema (ligero):\n"
+                  f"      sudo apt install python3-gi gir1.2-webkit2-4.1\n"
+                  f"      pip install pywebview[gtk]\n\n"
+                  f"  · Qt WebEngine, que trae su propio Chromium (nada del "
+                  f"sistema):\n"
+                  f"      pip install qtpy PySide6-Essentials PySide6-Addons\n\n"
+                  f"`python tools/check_linux.py` dice cuál de las dos ve este "
+                  f"equipo.", file=sys.stderr)
             return 1
         raise
     return 0

@@ -2,3 +2,7 @@
 # nadie más. Lo ya versionado se queda como está; esto sólo evita que entre más.
 __pycache__/
 *.py[cod]
+
+# Productos de PyInstaller, si alguna vez se congela la aplicación.
+/build/
+/dist/

@@ -27,15 +27,26 @@ pip install -r requirements.txt
 En Linux hacen falta además dos cosas del sistema, porque no vienen por pip:
 
 ```bash
-# la ventana (pywebview dibuja con WebKitGTK)
+# la ventana (pywebview dibuja con el WebKitGTK del sistema)
 sudo apt install python3-gi gir1.2-webkit2-4.1
 # lanzar el juego, que es de Windows
 sudo apt install wine64
 ```
 
+> **Si usas un entorno virtual, créalo con `--system-site-packages`.** `gi` es
+> un paquete del sistema y un venv normal no lo ve, así que la ventana no
+> abriría:
+>
+> ```bash
+> python3 -m venv --system-site-packages .venv
+> ```
+
 El llavero del escritorio (GNOME Keyring, KWallet…) es donde se guardan la
 contraseña y el ticket; suele estar ya en cualquier escritorio. Sin él la
 aplicación funciona, pero no recuerda nada — ver *Almacenamiento*.
+
+`python tools/check_linux.py` dice de una vez qué falta: el motor de la ventana,
+Wine, el ayudante, el llavero y las instalaciones que encuentra.
 
 ## Uso
 
@@ -254,6 +265,7 @@ No hay framework: son guiones sueltos, sin dependencias salvo donde se indica.
 | `tools/test_paths_adopt.py` | La adopción de la carpeta de datos anterior. |
 | `tools/test_installs_prefix.py` | Encontrar Trove dentro de prefijos de Proton y Wine (necesita mingw-w64). |
 | `tools/test_wine_helper.py` | La entrega del ticket de extremo a extremo bajo Wine (necesita wine64 y mingw-w64). |
+| `tools/check_linux.py` | No es una prueba: comprueba que ESTE equipo está listo para usarla en Linux. |
 
 ## Estado
 
