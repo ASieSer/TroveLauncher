@@ -365,8 +365,14 @@
             if (grow) stop.classList.add('grow');
             actions.appendChild(stop);
         } else {
-            const play = actionButton('play', busy ? 'Busy…' : 'Launch', 'accent',
-                busy ? null : () => launch(account), { disabled: busy });
+            // Si en este equipo no se puede lanzar (falta Wine, falta el
+            // ayudante…), el botón lo dice en lugar de fallar al pulsarlo.
+            const host = state.host || { ready: true };
+            const blocked = !host.ready;
+            const play = actionButton('play',
+                blocked ? host.detail : (busy ? 'Busy…' : 'Launch'), 'accent',
+                (busy || blocked) ? null : () => launch(account),
+                { disabled: busy || blocked });
             if (grow) play.classList.add('grow');
             actions.appendChild(play);
         }
@@ -1227,6 +1233,42 @@
         }
     }
 
+    /** Lo que cambia según el sistema: los ajustes de Wine sólo existen donde
+     *  hacen falta, y el aviso sobre dónde acaban las contraseñas depende de si
+     *  hay un almacén de secretos detrás. */
+    function renderPlatform() {
+        const host = state.host || {};
+        const wine = host.kind === 'wine';
+        $('wine-section').classList.toggle('hidden', !wine);
+        if (wine) {
+            const status = $('wine-status');
+            status.textContent = host.ready
+                ? 'Ready: the game will be launched inside its prefix.'
+                : host.detail;
+            status.classList.toggle('bad', !host.ready);
+            $('wine-binary').value = state.wine_binary || '';
+            $('wine-prefix').value = state.wine_prefix || '';
+        }
+
+        const vault = state.vault || {};
+        const note = $('vault-note');
+        if (vault.available) {
+            note.innerHTML = 'Accounts themselves are always stored. This only covers the '
+                + '<em>password</em>, kept by ' + (vault.backend === 'DPAPI'
+                    ? 'Windows DPAPI, so only this Windows user on this machine can read it'
+                    : 'your desktop keyring (' + vault.backend + ')')
+                + '. Without it you must retype it once the Trion session expires (~48h), and '
+                + 'auto-relog cannot work at all — a background relaunch has no way to ask you.';
+            note.classList.remove('bad');
+        } else {
+            note.textContent = 'There is nowhere safe to keep secrets on this machine ('
+                + (vault.detail || 'no secret store') + '), so passwords will not be '
+                + 'remembered and your session will have to be signed in again on every '
+                + 'start. Nothing is ever written unencrypted.';
+            note.classList.add('bad');
+        }
+    }
+
     function renderDrawer() {
         const versions = state.versions || {};
         $('version-live').textContent = versions['live-us'] || 'not synced';
@@ -1236,6 +1278,7 @@
         $('opt-remember-password').checked = !!state.remember_password;
         $('opt-reparent').checked = !!state.reparent_glyph;
         renderFolders();
+        renderPlatform();
         $('theme-club').value = clubOf(state.theme);
         const font = (state.theme || {}).font || 'system';
         for (const b of document.querySelectorAll('[data-font]')) {
@@ -1478,6 +1521,15 @@
             renderThemeControls();
             call('save_prefs', { theme: state.theme });
         });
+        for (const id of ['wine-binary', 'wine-prefix']) {
+            // Al salir del campo, no en cada tecla: cambiar el prefijo a medio
+            // escribir dejaría al ayudante apuntando a un sitio inexistente.
+            $(id).addEventListener('change', () => {
+                const key = id.replace('-', '_');
+                state[key] = $(id).value.trim();
+                call('save_prefs', { [key]: state[key] }).then(refresh);
+            });
+        }
         $('theme-tint').addEventListener('input', () => {
             const value = parseFloat($('theme-tint').value);
             state.theme = { ...state.theme, tint: value };

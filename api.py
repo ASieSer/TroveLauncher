@@ -198,7 +198,8 @@ class Api:
     @_safe
     def save_prefs(self, changes):
         allowed = {"remember_password", "update_first", "reparent_glyph",
-                   "hide_emails", "game_path", "pts_game_path", "theme"}
+                   "hide_emails", "game_path", "pts_game_path", "theme",
+                   "wine_binary", "wine_prefix"}
         clean = {k: v for k, v in (changes or {}).items() if k in allowed}
         prefs.save(**clean)
         return {"saved": clean}

@@ -386,21 +386,21 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
 
     size_t blob_len = 0;
     unsigned char *blob = build_rift(ticket, &blob_len);
-    if (!blob) { free(exclude.v); emit_err(id, "no hay memoria para el blob del ticket"); return; }
+    if (!blob) { free(exclude.v); emit_err(id, "out of memory building the ticket blob"); return; }
 
     SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
     HANDLE hmap = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa, PAGE_READWRITE,
                                      0, (DWORD)blob_len, NULL);
-    if (!hmap) { free(blob); free(exclude.v); emit_winerr(id, "CreateFileMapping falló"); return; }
+    if (!hmap) { free(blob); free(exclude.v); emit_winerr(id, "CreateFileMapping failed"); return; }
     void *view = MapViewOfFile(hmap, FILE_MAP_WRITE, 0, 0, blob_len);
-    if (!view) { CloseHandle(hmap); free(blob); free(exclude.v); emit_winerr(id, "MapViewOfFile falló"); return; }
+    if (!view) { CloseHandle(hmap); free(blob); free(exclude.v); emit_winerr(id, "MapViewOfFile failed"); return; }
     memcpy(view, blob, blob_len);
     UnmapViewOfFile(view);
     SecureZeroMemory(blob, blob_len);
     free(blob);
 
     HANDLE hevent = CreateEventW(&sa, FALSE, FALSE, NULL);
-    if (!hevent) { CloseHandle(hmap); free(exclude.v); emit_winerr(id, "CreateEvent falló"); return; }
+    if (!hevent) { CloseHandle(hmap); free(exclude.v); emit_winerr(id, "CreateEvent failed"); return; }
 
     /* Reparent: el loader como hijo de Glyph, para que la cadena de lanzamiento
        sea la de una partida legítima (ver PROC_THREAD_ATTRIBUTE_PARENT_PROCESS
@@ -409,14 +409,14 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     if (parent && parent[0]) {
         DWORD ppid = find_pid_by_name(parent);
         if (!ppid) {
-            emit_log("[inject] reparent: el proceso padre no está corriendo; "
-                     "se lanza sin reparent");
+            emit_log("[inject] reparent: the parent process is not running; "
+                     "launching without reparent");
         } else {
             parent_handle = OpenProcess(PROCESS_CREATE_PROCESS, FALSE, ppid);
             if (!parent_handle)
-                emit_log("[inject] reparent: OpenProcess falló; se lanza sin reparent");
+                emit_log("[inject] reparent: OpenProcess failed; launching without reparent");
             else
-                emit_log("[inject] reparent: el loader colgará de Glyph");
+                emit_log("[inject] reparent: the loader will hang off Glyph");
         }
     }
 
@@ -427,7 +427,7 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     if (!attr || !InitializeProcThreadAttributeList(attr, 1, 0, &attr_size)) {
         if (parent_handle) CloseHandle(parent_handle);
         free(attr); free(exclude.v);
-        emit_winerr(id, "InitializeProcThreadAttributeList falló");
+        emit_winerr(id, "InitializeProcThreadAttributeList failed");
         return;
     }
     /* O la lista blanca de handles O el padre, nunca las dos: con un padre
@@ -441,7 +441,7 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     if (!attr_ok) {
         DeleteProcThreadAttributeList(attr); free(attr); free(exclude.v);
         if (parent_handle) CloseHandle(parent_handle);
-        emit_winerr(id, "UpdateProcThreadAttribute falló");
+        emit_winerr(id, "UpdateProcThreadAttribute failed");
         return;
     }
 
@@ -471,8 +471,8 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     wchar_t *wslash = wcsrchr(workdir, L'\\');
     if (wslash) *wslash = L'\0';
 
-    emit_log(via_loader ? "[inject] lanzando a través del loader del anti-cheat"
-                        : "[inject] lanzando el juego directamente");
+    emit_log(via_loader ? "[inject] launching through the anti-cheat loader"
+                        : "[inject] launching the game directly");
 
     /* Heredar handles sólo en la ruta sin reparent, que es la que se apoya en
        la lista blanca; con padre declarado el ticket va por DuplicateHandle. */
@@ -485,7 +485,7 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     if (parent_handle) CloseHandle(parent_handle);
     if (!ok) {
         CloseHandle(hmap); CloseHandle(hevent); free(exclude.v);
-        emit_winerr(id, "CreateProcess falló");
+        emit_winerr(id, "CreateProcess failed");
         return;
     }
     CloseHandle(pi.hThread);
@@ -495,8 +495,8 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
         DWORD code = 0;
         GetExitCodeProcess(pi.hProcess, &code);
         emit_log(code == STILL_ACTIVE
-                 ? "[inject] el juego no ha señalado todavía; puede recuperarse"
-                 : "[inject] el proceso salió antes de consumir el ticket");
+                 ? "[inject] the game has not signalled yet; it may still recover"
+                 : "[inject] the process exited before consuming the ticket");
     }
     CloseHandle(pi.hProcess);
 
@@ -534,12 +534,12 @@ static DWORD WINAPI wait_thread(LPVOID arg)
 static void cmd_list(long id)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) { emit_winerr(id, "Toolhelp falló"); return; }
+    if (snap == INVALID_HANDLE_VALUE) { emit_winerr(id, "Toolhelp failed"); return; }
     /* Se arma la línea entera antes de escribirla: un hilo de wait podría
        colarse en medio y partir la respuesta. */
     size_t cap = 1 << 16, len = 0;
     char *buf = (char *)malloc(cap);
-    if (!buf) { CloseHandle(snap); emit_err(id, "sin memoria"); return; }
+    if (!buf) { CloseHandle(snap); emit_err(id, "out of memory"); return; }
     len += (size_t)snprintf(buf, cap, "%ld ok", id);
     PROCESSENTRY32W e; e.dwSize = sizeof e;
     if (Process32FirstW(snap, &e)) {
@@ -595,7 +595,7 @@ int main(void)
 
     char *line = (char *)malloc(LINE_MAX_BYTES);
     if (!line) return 1;
-    emit_log("[inject] ayudante listo dentro del prefijo");
+    emit_log("[inject] helper ready inside the prefix");
 
     while (fgets(line, LINE_MAX_BYTES, stdin)) {
         char *nl = strpbrk(line, "\r\n");
@@ -621,14 +621,14 @@ int main(void)
             DWORD wait_ms = wait_tok ? (DWORD)strtoul(wait_tok, NULL, 10) : 30000;
             char *exclude_csv = next_token(&cursor);
             if (!exe8 || !ticket || !auth || !parent8) {
-                emit_err(id, "spawn: faltan argumentos");
+                emit_err(id, "spawn: missing arguments");
             } else {
                 wchar_t *exe = utf8_to_wide((const unsigned char *)exe8, strlen(exe8));
                 wchar_t *parent = utf8_to_wide((const unsigned char *)parent8, strlen(parent8));
                 if (exe && parent)
                     cmd_spawn(id, exe, ticket, auth, parent, wait_ms,
                               exclude_csv ? exclude_csv : "");
-                else emit_err(id, "spawn: no hay memoria");
+                else emit_err(id, "spawn: out of memory");
                 free(exe); free(parent);
             }
             if (ticket) SecureZeroMemory(ticket, strlen(ticket));
@@ -641,23 +641,23 @@ int main(void)
             job->pid = pid_tok ? (DWORD)strtoul(pid_tok, NULL, 10) : 0;
             HANDLE th = CreateThread(NULL, 0, wait_thread, job, 0, NULL);
             if (th) CloseHandle(th);
-            else { emit_err(id, "no se pudo crear el hilo de espera"); free(job); }
+            else { emit_err(id, "could not create the wait thread"); free(job); }
         } else if (strcmp(cmd, "kill") == 0) {
             char *pid_tok = next_token(&cursor);
             DWORD pid = pid_tok ? (DWORD)strtoul(pid_tok, NULL, 10) : 0;
             HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
-            if (!h) emit_winerr(id, "OpenProcess falló");
+            if (!h) emit_winerr(id, "OpenProcess failed");
             else {
                 BOOL ok = TerminateProcess(h, 0);
                 CloseHandle(h);
                 if (ok) emit("%ld ok", id);
-                else emit_winerr(id, "TerminateProcess falló");
+                else emit_winerr(id, "TerminateProcess failed");
             }
         } else if (strcmp(cmd, "quit") == 0) {
             emit("%ld ok", id);
             break;
         } else {
-            emit_err(id, "orden desconocida");
+            emit_err(id, "unknown command");
         }
     }
     free(line);

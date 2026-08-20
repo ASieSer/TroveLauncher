@@ -320,6 +320,8 @@ class LauncherService:
             "pts_game_path": data.get("pts_game_path", ""),
             "hide_emails": bool(data.get("hide_emails", True)),
             "remember_password": bool(data.get("remember_password", True)),
+            "wine_binary": data.get("wine_binary", ""),
+            "wine_prefix": data.get("wine_prefix", ""),
             "theme": data.get("theme") or dict(prefs.DEFAULTS["theme"]),
             "update_first": bool(data.get("update_first", True)),
             "reparent_glyph": bool(data.get("reparent_glyph", False)),

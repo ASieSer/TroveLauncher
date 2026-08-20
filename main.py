@@ -1,9 +1,9 @@
 """Punto de entrada: abre la ventana WebView y conecta la interfaz con el servicio.
 
-La interfaz es HTML/CSS/JS servido desde ``web/`` y renderizado por WebView2
-(Edge Chromium) a través de pywebview. Las llamadas van de JS a Python por
-``window.pywebview.api.*``; los eventos van de Python a JS inyectando una
-llamada a ``window.__launcherEvent`` con ``evaluate_js``.
+La interfaz es HTML/CSS/JS servido desde ``web/`` y renderizado por pywebview:
+WebView2 (Edge Chromium) en Windows y WebKitGTK en Linux. Las llamadas van de JS
+a Python por ``window.pywebview.api.*``; los eventos van de Python a JS
+inyectando una llamada a ``window.__launcherEvent`` con ``evaluate_js``.
 """
 
 from __future__ import annotations
@@ -126,7 +126,19 @@ def main() -> int:
 
     # debug=True abre las DevTools de WebView2 con F12: útil mientras montamos
     # la interfaz. Se activa pasando --debug al arrancar.
-    webview.start(debug="--debug" in sys.argv)
+    try:
+        webview.start(debug="--debug" in sys.argv)
+    except Exception as exc:
+        # El fallo típico fuera de Windows es no tener ningún motor detrás de
+        # pywebview. Decirlo con su nombre ahorra media hora de rastreo.
+        if sys.platform != "win32":
+            print(f"No se pudo abrir la ventana: {exc}\n\n"
+                  f"En Linux pywebview necesita WebKitGTK. En Debian/Ubuntu:\n"
+                  f"  sudo apt install python3-gi gir1.2-webkit2-4.1 "
+                  f"libcairo2-dev\n"
+                  f"  pip install pywebview[gtk]", file=sys.stderr)
+            return 1
+        raise
     return 0
 
 

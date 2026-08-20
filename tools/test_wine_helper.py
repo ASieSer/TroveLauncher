@@ -82,7 +82,7 @@ try:
     helper.start()
     check("el ayudante arranca dentro del prefijo", helper.alive)
     check("y saluda por el canal de registro",
-          any("ayudante listo" in m for m in logs))
+          any("helper ready" in m for m in logs))
 
     procs = helper.list_processes()
     check("enumera procesos del prefijo",

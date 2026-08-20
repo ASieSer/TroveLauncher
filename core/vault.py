@@ -189,8 +189,8 @@ def _pick(log=print) -> tuple[Vault, str]:
     try:
         import keyring                                  # noqa: PLC0415
     except Exception as exc:
-        return Vault(), (f"no está el módulo keyring ({exc}); las contraseñas no se "
-                         f"recordarán y el ticket vivirá sólo en memoria")
+        return Vault(), (f"the keyring module is missing ({exc}); passwords will not be "
+                         f"remembered and the ticket will live in memory only")
 
     # Que el módulo esté no significa que haya un llavero detrás: en una sesión
     # sin D-Bus, keyring elige un backend que falla al primer uso. Se comprueba
@@ -202,12 +202,12 @@ def _pick(log=print) -> tuple[Vault, str]:
         ok = keyring.get_password(KEYRING_SERVICE, probe) == "ok"
         keyring.delete_password(KEYRING_SERVICE, probe)
     except Exception as exc:
-        return Vault(), (f"el llavero del escritorio no responde ({exc}); las "
-                         f"contraseñas no se recordarán y el ticket vivirá sólo "
-                         f"en memoria")
+        return Vault(), (f"the desktop keyring is not answering ({exc}); passwords "
+                         f"will not be remembered and the ticket will live in "
+                         f"memory only")
     if not ok:
-        return Vault(), "el llavero del escritorio no devuelve lo que se le guarda"
-    return KeyringVault(keyring), f"llavero: {backend.__class__.__name__}"
+        return Vault(), "the desktop keyring does not return what it is given"
+    return KeyringVault(keyring), f"keyring: {backend.__class__.__name__}"
 
 
 def vault(log=print) -> Vault:
@@ -240,7 +240,7 @@ def _purge_plaintext_leftovers(log=print) -> None:
     try:
         for path in app_data_dir().glob("auth*.bin"):
             path.unlink(missing_ok=True)
-            log(f"[vault] retirado {path.name}: era un ticket en claro de una "
-                f"versión anterior")
+            log(f"[vault] removed {path.name}: a plaintext ticket left by an "
+                f"earlier version")
     except OSError:
         pass

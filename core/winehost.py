@@ -112,10 +112,10 @@ class WineHelper:
             if self.alive:
                 return
             if not self.wine:
-                raise WineError("no se ha encontrado Wine. Instálalo o indica su "
-                                "ruta en Ajustes.")
+                raise WineError("Wine was not found. Install it, or point at it "
+                                "in Settings.")
             if not self.helper.is_file():
-                raise WineError(f"falta el ayudante {self.helper}. Compílalo con "
+                raise WineError(f"the helper {self.helper} is missing. Build it with "
                                 f"tools/build_helper.sh.")
             try:
                 self._proc = subprocess.Popen(
@@ -124,7 +124,7 @@ class WineHelper:
                     stderr=subprocess.DEVNULL, env=self.env(), bufsize=1,
                     text=True, encoding="utf-8", errors="replace")
             except OSError as exc:
-                raise WineError(f"no se pudo arrancar Wine: {exc}") from exc
+                raise WineError(f"could not start Wine: {exc}") from exc
             self._reader = threading.Thread(target=self._read_loop, daemon=True,
                                             name="wine-helper")
             self._reader.start()
@@ -148,7 +148,7 @@ class WineHelper:
         # Nadie va a contestar ya: se despierta a quien estuviera esperando.
         with self._lock:
             for slot in self._pending.values():
-                slot["error"] = "el ayudante de Wine se ha cerrado"
+                slot["error"] = "the Wine helper was shut down"
                 slot["event"].set()
             self._pending.clear()
 
@@ -168,7 +168,7 @@ class WineHelper:
             try:
                 msg_id = int(head)
             except ValueError:
-                self._log(f"[wine] línea inesperada: {line[:120]}")
+                self._log(f"[wine] unexpected line: {line[:120]}")
                 continue
             status, _, payload = rest.partition(" ")
             with self._lock:
@@ -178,12 +178,12 @@ class WineHelper:
             if status == "ok":
                 slot["result"] = payload.split(" ") if payload else []
             else:
-                slot["error"] = _decode(payload) or "error desconocido"
+                slot["error"] = _decode(payload) or "unknown error"
             slot["event"].set()
         # stdout cerrado: el ayudante murió.
         with self._lock:
             for slot in self._pending.values():
-                slot["error"] = "el ayudante de Wine ha muerto"
+                slot["error"] = "the Wine helper died"
                 slot["event"].set()
             self._pending.clear()
 
@@ -196,7 +196,7 @@ class WineHelper:
         """
         proc = self._proc
         if not proc or proc.poll() is not None:
-            raise WineError("el ayudante de Wine no está corriendo")
+            raise WineError("the Wine helper is not running")
         slot = {"event": threading.Event(), "result": None, "error": None}
         with self._lock:
             msg_id = self._next_id
@@ -210,11 +210,11 @@ class WineHelper:
         except OSError as exc:
             with self._lock:
                 self._pending.pop(msg_id, None)
-            raise WineError(f"no se pudo hablar con el ayudante: {exc}") from exc
+            raise WineError(f"could not talk to the helper: {exc}") from exc
         if not slot["event"].wait(timeout):
             with self._lock:
                 self._pending.pop(msg_id, None)
-            raise WineError(f"el ayudante no respondió a «{cmd}»")
+            raise WineError(f"the helper did not answer «{cmd}»")
         if slot["error"]:
             raise WineError(slot["error"])
         return slot["result"] or []
@@ -257,7 +257,7 @@ class WineHelper:
                         ",".join(str(int(p)) for p in sorted(exclude or [])) or "0",
                         timeout=max(120.0, wait_ms / 1000 + 90))
         if not res:
-            raise WineError("el ayudante no devolvió el pid del juego")
+            raise WineError("the helper did not return the game pid")
         return {"pid": int(res[0]),
                 "consumed": len(res) > 1 and res[1] == "1",
                 "via_loader": len(res) > 2 and res[2] == "1"}

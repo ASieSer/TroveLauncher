@@ -2,25 +2,40 @@
 
 Launcher propio para Trove: mantiene la instalación al día contra el CDN de
 Trion, se autentica con tus credenciales de Glyph y arranca el juego, sin
-necesidad del cliente de Glyph.
+necesidad del cliente de Glyph. **Windows y Linux** — en Linux el juego se lanza
+dentro de su prefijo de Wine o Proton (ver [Linux](#linux)).
 
-Interfaz HTML/CSS/JS sobre WebView2 (pywebview), backend Python.
+Interfaz HTML/CSS/JS sobre pywebview (WebView2 en Windows, WebKitGTK en Linux),
+backend Python.
 
 > Porta código de [BetterTroveTools](https://github.com/AallynReed/BetterTroveTools)
 > (MIT). Ver [`NOTICE.md`](NOTICE.md).
 
 ## Requisitos
 
-- Windows (la ruta de lanzamiento usa las APIs Win32 de procesos y handles)
 - Python 3.10 o superior
-- WebView2 Runtime — ya viene con Windows 11
 - Una cuenta de Glyph con Trove
+- **En Windows**: WebView2 Runtime, que ya viene con Windows 11
+- **En Linux**: Wine, y WebKitGTK para la ventana
 
 ## Instalación
 
 ```bash
 pip install -r requirements.txt
 ```
+
+En Linux hacen falta además dos cosas del sistema, porque no vienen por pip:
+
+```bash
+# la ventana (pywebview dibuja con WebKitGTK)
+sudo apt install python3-gi gir1.2-webkit2-4.1
+# lanzar el juego, que es de Windows
+sudo apt install wine64
+```
+
+El llavero del escritorio (GNOME Keyring, KWallet…) es donde se guardan la
+contraseña y el ticket; suele estar ya en cualquier escritorio. Sin él la
+aplicación funciona, pero no recuerda nada — ver *Almacenamiento*.
 
 ## Uso
 
@@ -45,6 +60,10 @@ python main.py --debug
 | `trionauth.py` | Autenticación contra `auth.trionworlds.com`, 2FA por email, keep-alive y caché del ticket cifrada con DPAPI. |
 | `inject.py` | Entrega del ticket al juego tal y como lo hace Glyph: blob RIFT cifrado con RC4 en un file-mapping heredable. |
 | `launch.py` | Cadenas de servidor de autenticación por región. |
+| `rift.py` | El blob del ticket (RC4 + cabecera «RIFT»). Código puro, compartido con el ayudante de Wine. |
+| `gamehost.py` | Lanzar, esperar, cerrar: Windows directo o, en Linux, a través de Wine. |
+| `winehost.py` | El otro extremo del ayudante que corre dentro del prefijo. |
+| `vault.py` | Dónde se guardan los secretos: DPAPI en Windows, llavero del escritorio en Linux. |
 | `installs.py` | Detección de instalaciones: registro, Steam y carpetas propias. |
 | `prefs.py` | Preferencias, cuentas y contraseñas cifradas con DPAPI. |
 | `service.py` | Orquestador: hilo de trabajo, 2FA, auto-relog y progreso. |
@@ -94,6 +113,51 @@ Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
   mande en el acento. A 0% la interfaz queda gris neutra.
 - **Background particles** — el campo de estrellas del fondo.
 
+### Linux
+
+Trove es un juego de Windows: en Linux corre bajo Wine o Proton. La aplicación,
+en cambio, corre nativa — y ahí aparece el único problema de verdad del port.
+
+**El ticket no se puede entregar desde fuera del prefijo.** El juego no lo lee
+de la línea de órdenes: lo saca de un *file-mapping* de Windows haciendo
+`OpenProcess(pid del lanzador)` + `DuplicateHandle`. Son objetos del kernel de
+Windows; un proceso Linux nativo ni los crea ni los comparte. No es cuestión de
+portar unas llamadas: no existe el equivalente.
+
+La salida es un ayudante que vive donde vive el juego:
+
+```
+  interfaz + servicio  (Python, nativo en Linux)
+            │  órdenes por tubería
+            ▼
+  native/troveinject.exe   ← corre con wine, DENTRO del prefijo
+            │  CreateProcess + handles heredables
+            ▼
+  xldr_Trove_GL_loader_x64.exe → Trove_x64.exe
+```
+
+Ese ayudante hace exactamente lo que hace `inject.py` en Windows, y por las
+mismas razones. Detalles que importan:
+
+- **Un solo ayudante por sesión, y vive mientras viva la aplicación.** Los
+  handles del ticket tienen que seguir abiertos mientras haya partida, porque el
+  juego los duplica *de él*. Es la misma fuga deliberada de dos handles por
+  lanzamiento que hace Glyph.
+- **El prefijo se deduce de la ruta del juego.** Un prefijo distinto es
+  literalmente otro disco C:, donde el juego no existe. Si la instalación cuelga
+  de `…/compatdata/<appid>/pfx/drive_c/…`, ése es el prefijo. Se puede forzar
+  otro en Ajustes → Wine, junto con el binario de Wine (para usar el de Proton,
+  que vive en `…/dist/bin/wine`).
+- **Las instalaciones se buscan dentro de los prefijos**: los de Proton bajo
+  `steamapps/compatdata/*/pfx`, y los de Wine al uso (`~/.wine`, Lutris,
+  Bottles). Dentro, la estructura es la de Windows.
+- El binario del ayudante viaja compilado (`native/troveinject.exe`, 59 KB)
+  porque quien juega en Linux no tiene por qué tener un compilador cruzado. La
+  fuente está al lado y `tools/build_helper.sh` lo reproduce con mingw-w64.
+
+Lo que **no** cambia entre sistemas: el actualizador, la autenticación, el
+almacén de estado y toda la interfaz. Son Python puro y ya cruzaban.
+
 ### Detalles que conviene no romper
 
 **El hash del manifiesto no es recalculable.** Es un token opaco de "¿ha
@@ -118,6 +182,13 @@ restaura, ni las enumera: nada de `EnumWindows`, `ShowWindow` ni
 `SetForegroundWindow`. Ahorrarle un alt-tab a alguien no compensa ponerse a
 manipular ventanas ajenas desde un cliente de terceros. Cerrar una partida sí
 sigue estando, porque el proceso lo arrancó el propio launcher.
+
+**Dos implementaciones del mismo blob.** El formato del ticket lo escriben
+`core/rift.py` (Python, para Windows) y `native/troveinject.c` (C, para Wine).
+Dos códigos que tienen que coincidir byte a byte o el juego rebota al login, así
+que no se confía en que coincidan: `tools/test_wine_helper.py` monta un Trove de
+mentira que recoge el ticket como el de verdad y comprueba que lo que descifra
+es *exactamente* lo que habría armado Windows.
 
 **El loader del anti-cheat.** Si existe `xldr_Trove_GL_loader_x64.exe` junto al
 ejecutable, se lanza a través de él con el nombre del juego como `argv[1]` (no
@@ -156,6 +227,33 @@ que importan:
 Como esto corre una sola vez en la máquina de cada usuario y sobre sus cuentas,
 `tools/test_paths_adopt.py` lo repite a voluntad contra carpetas temporales
 (`python tools/test_paths_adopt.py`, sin dependencias).
+
+### Secretos
+
+La contraseña y el ticket —que es una credencial viva unas 48 horas— no se
+guardan en la carpeta de datos, sino en el almacén del sistema:
+
+| | Dónde | Qué lo protege |
+| --- | --- | --- |
+| Windows | `<datos>/cred-<hash>.bin`, `auth-<hash>.bin` | DPAPI, ámbito de usuario |
+| Linux | Llavero del escritorio (`keyring`) | La sesión del usuario |
+| Sin ninguno | En ningún sitio | — |
+
+**Si no hay almacén, no se guarda nada**: la contraseña no se recuerda y el
+ticket vive sólo en memoria, así que hay que volver a entrar en el siguiente
+arranque. Es molesto y es lo correcto; antes, fuera de Windows, el ticket se
+escribía en claro.
+
+### Pruebas
+
+No hay framework: son guiones sueltos, sin dependencias salvo donde se indica.
+
+| | Qué comprueba |
+| --- | --- |
+| `tools/test_vault.py` | El almacén de secretos y su degradación sin llavero. |
+| `tools/test_paths_adopt.py` | La adopción de la carpeta de datos anterior. |
+| `tools/test_installs_prefix.py` | Encontrar Trove dentro de prefijos de Proton y Wine (necesita mingw-w64). |
+| `tools/test_wine_helper.py` | La entrega del ticket de extremo a extremo bajo Wine (necesita wine64 y mingw-w64). |
 
 ## Estado
 

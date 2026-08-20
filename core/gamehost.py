@@ -37,7 +37,7 @@ class GameHost:
 
     def check(self) -> None:
         """Lanza ``HostUnavailable`` si hoy no se puede jugar."""
-        raise HostUnavailable("este sistema no sabe lanzar Trove")
+        raise HostUnavailable("this system cannot launch Trove")
 
     def spawn(self, exe: Path, ticket: str, auth_server: str, *,
               parent_process_name: str = "", exclude: set[int] | None = None,
@@ -49,7 +49,7 @@ class GameHost:
         sin esta lista dos cuentas lanzadas a la vez pueden acabar apuntando a
         la misma.
         """
-        raise HostUnavailable("este sistema no sabe lanzar Trove")
+        raise HostUnavailable("this system cannot launch Trove")
 
     def wait_for_exit(self, pid: int) -> int | None:
         return None
@@ -176,11 +176,11 @@ class WineHost(GameHost):
         wine, _ = self._settings()
         if not wine:
             raise HostUnavailable(
-                "no se ha encontrado Wine. Instálalo (o indica su ruta en "
-                "Ajustes) para poder lanzar el juego.")
+                "Wine was not found. Install it, or point at it in Settings, "
+                "to be able to launch the game.")
         if not winehost.helper_path().is_file():
             raise HostUnavailable(
-                f"falta {winehost.HELPER_NAME}. Compílalo con "
+                f"{winehost.HELPER_NAME} is missing. Build it with "
                 f"tools/build_helper.sh.")
 
     def _connect(self, game_exe: Path | None = None):
@@ -194,7 +194,7 @@ class WineHost(GameHost):
             prefix = winehost.prefix_for(game_exe, configured)
             helper = winehost.WineHelper(wine=wine, prefix=prefix, log=self._log)
             helper.start()
-            self._log(f"[wine] ayudante en marcha (prefijo {prefix})")
+            self._log(f"[wine] helper running (prefix {prefix})")
             self._helper = helper
             return helper
 
@@ -212,8 +212,8 @@ class WineHost(GameHost):
         except WineError as exc:
             raise HostUnavailable(str(exc)) from exc
         if not res["consumed"]:
-            log("[wine] el juego no ha confirmado el ticket todavía; "
-                "si se queda en la pantalla de entrada, vuelve a intentarlo")
+            log("[wine] the game has not confirmed the ticket yet; "
+                "if it sits at the login screen, try again")
         return int(res["pid"])
 
     def wait_for_exit(self, pid: int) -> int | None:

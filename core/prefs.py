@@ -71,6 +71,10 @@ DEFAULTS = {
     "custom_dirs": [],
     "reparent_glyph": False,
     "hide_emails": True,
+    # Sólo se usan fuera de Windows: con qué Wine se lanza y en qué prefijo.
+    # Vacíos = se deducen (ver core/winehost.py).
+    "wine_binary": "",
+    "wine_prefix": "",
     # Apariencia: acento, acentos propios guardados, partículas del fondo,
     # familia tipográfica ("system" | "quicksand" | "comfortaa") y tema de club
     # ("" | "mystic-cave" | "arsyn" | "sayro"), que fija el acento mientras
