@@ -126,11 +126,7 @@ el juego directamente.
 
 ### Almacenamiento
 
-Todo va a `%APPDATA%/TroveLauncher` — la carpeta **no** se renombra con la
-aplicación: cambiarla dejaría huérfanas las cuentas y los tickets de quien ya la
-tenga. Por lo mismo, la entropía DPAPI de las contraseñas guardadas
-(`TroveLauncher.credentials.v1`) es un identificador fijo, no un nombre para
-lucir: tocarlo haría indescifrables las contraseñas ya guardadas.
+Todo va a `%APPDATA%/TroveAccountsHub`:
 
 - `prefs.json` — preferencias, cuentas y alias
 - `auth-<hash>.bin` — ticket por cuenta, cifrado con DPAPI
@@ -140,6 +136,26 @@ lucir: tocarlo haría indescifrables las contraseñas ya guardadas.
 
 Las contraseñas nunca se guardan en texto plano: si DPAPI no está disponible,
 sencillamente no se recuerdan.
+
+**La carpeta anterior se adopta, no se abandona.** La aplicación se llamaba
+Trove Launcher y guardaba en `%APPDATA%/TroveLauncher`. Al arrancar por primera
+vez con el nombre nuevo, si la carpeta nueva no tiene `prefs.json` y la vieja sí,
+se copia su contenido entero y se deja constancia en `adopted-from.txt`. Detalles
+que importan:
+
+- Se **copia**, no se mueve: volver a una versión anterior sigue encontrando sus
+  datos donde estaban. El precio es un duplicado en disco.
+- Nunca pisa un fichero que ya exista en destino, y un fallo a medias no impide
+  arrancar: lo que se haya traído se queda y el resto sigue en la carpeta vieja.
+- Los blobs DPAPI (`auth-*.bin`, `cred-*.bin`) se descifran igual desde la ruta
+  nueva: van atados al usuario de Windows y a la máquina, no a la carpeta.
+- La entropía DPAPI de las contraseñas sigue diciendo
+  `TroveLauncher.credentials.v1`. Es un identificador, no un nombre a la vista:
+  cambiarlo dejaría ilegibles las contraseñas ya guardadas.
+
+Como esto corre una sola vez en la máquina de cada usuario y sobre sus cuentas,
+`tools/test_paths_adopt.py` lo repite a voluntad contra carpetas temporales
+(`python tools/test_paths_adopt.py`, sin dependencias).
 
 ## Estado
 

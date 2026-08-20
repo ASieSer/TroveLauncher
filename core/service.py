@@ -359,7 +359,7 @@ class LauncherService:
             {"kind": "game", "label": "Trove (Live)", "path": data.get("game_path", "")},
             {"kind": "pts", "label": "Trove (PTS)", "path": pts},
             {"kind": "modcfg", "label": "Mod configs", "path": str(trove_appdata_dir() / "ModCfgs")},
-            {"kind": "data", "label": "Launcher data", "path": str(app_data_dir())},
+            {"kind": "data", "label": "App data", "path": str(app_data_dir())},
         ]
         return [f for f in out if f["path"]]
 
