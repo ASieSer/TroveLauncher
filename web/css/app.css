@@ -350,6 +350,26 @@ body > * { position: relative; z-index: 1; }
 .act:disabled { opacity: .3; cursor: not-allowed; }
 .act svg { width: 14px; height: 14px; display: block; }
 
+/* Iconos que vienen de un PNG en vez de un SVG en línea. El archivo es blanco
+   con alfa y se usa como MÁSCARA: lo que se ve es el fondo —currentColor—, así
+   que sigue al tema igual que los trazados. */
+.mask-icon {
+    display: block;
+    width: 15px;
+    height: 15px;
+    background: currentColor;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+}
+.mask-icon.login {
+    -webkit-mask-image: url("../img/log-in.png");
+    mask-image: url("../img/log-in.png");
+}
+
 .act.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .act.accent:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 /* Auto-relog activo: el unico boton con relleno, para que el estado se lea de un
