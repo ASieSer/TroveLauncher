@@ -73,13 +73,26 @@
 
     let msgTimer = null;
     /** Mensaje global, en la barra inferior. Lo que afecta a UNA cuenta se ve en
-     *  su tarjeta (badge + tooltip), no aquí. */
-    function notice(text, kind) {
+     *  su tarjeta (badge + tooltip), no aquí.
+     *
+     *  Un resultado se va solo a los 7 segundos; el texto de algo EN MARCHA no
+     *  (`sticky`), porque lo apaga quien lo encendió —si no, un lanzamiento
+     *  lento se queda con la barra girando y sin decir de qué. */
+    function notice(text, kind, sticky) {
         const label = $('status-msg');
         label.textContent = text || '';
         label.className = 'msg ' + (kind || '');
         clearTimeout(msgTimer);
-        if (text) msgTimer = setTimeout(() => { label.textContent = ''; label.className = 'msg'; }, 7000);
+        if (text && !sticky) {
+            msgTimer = setTimeout(() => {
+                // Si mientras tanto sigue habiendo algo en marcha, el hueco es
+                // suyo: la barra sin texto no dice nada.
+                const pending = pendingActivity();
+                if (pending) { notice(pending, '', true); return; }
+                label.textContent = '';
+                label.className = 'msg';
+            }, 7000);
+        }
     }
     function clearNotice() { notice('', ''); }
 
@@ -1364,6 +1377,36 @@
 
     // --- eventos del backend ----------------------------------------------
 
+    // Lo que hay en marcha ahora mismo, por cuenta ('' = las operaciones que no
+    // son de ninguna: comprobar, actualizar, reparar). El indicador de abajo es
+    // uno para toda la aplicación, así que se enciende con la primera y se apaga
+    // con la última: barra y texto juntos, que es lo que se espera al verlos.
+    const inflight = new Map();
+
+    function startActivity(key, message, indeterminate) {
+        inflight.set(key, message);
+        $('progress').classList.remove('hidden');
+        $('bar-fill').classList.toggle('indeterminate', indeterminate !== false);
+        notice(message, '', true);
+    }
+
+    function pendingActivity() {
+        return inflight.size ? [...inflight.values()].pop() : '';
+    }
+
+    function endActivity(key) {
+        inflight.delete(key);
+        const pending = pendingActivity();
+        if (pending) {
+            // Queda faena: la barra sigue y el texto pasa a lo último que hay.
+            notice(pending, '', true);
+            return;
+        }
+        $('progress').classList.add('hidden');
+        $('bar-fill').classList.remove('indeterminate');
+        clearNotice();
+    }
+
     function onEvent(payload) {
         if (!payload) return;
 
@@ -1382,29 +1425,29 @@
             open2faModal(payload.email, payload.label || payload.email);
             return;
         }
+        const key = payload.email || '';
+
         if (payload.stage === 'downloading') {
             const total = payload.total || 0;
-            $('progress').classList.remove('hidden');
-            const fill = $('bar-fill');
-            fill.classList.remove('indeterminate');
-            fill.style.transform = 'scaleX(' + (total ? payload.current / total : 0) + ')';
-            notice(`${payload.current.toLocaleString()} / ${total.toLocaleString()} files`);
+            $('bar-fill').style.transform =
+                'scaleX(' + (total ? payload.current / total : 0) + ')';
+            startActivity(key,
+                `${payload.current.toLocaleString()} / ${total.toLocaleString()} files`,
+                false);
             return;
         }
-        if (payload.stage === 'settled') { refresh(); return; }
+        // 'settled' cierra un lanzamiento aunque no haya traído un 'done' (por
+        // ejemplo, un 2FA cancelado): sin esto la barra se quedaría girando.
+        if (payload.stage === 'settled') { endActivity(key); refresh(); return; }
 
         if (payload.message) {
             logLine(payload.message);
-            if (!payload.done) {
-                $('progress').classList.remove('hidden');
-                $('bar-fill').classList.add('indeterminate');
-                notice(payload.message);
-            }
+            if (!payload.done) startActivity(key, payload.message);
         }
         if (payload.done) {
-            $('progress').classList.add('hidden');
-            $('bar-fill').classList.remove('indeterminate');
-            // Lo que pertenece a una cuenta ya lo cuenta su tarjeta.
+            endActivity(key);
+            // Lo que pertenece a una cuenta ya lo cuenta su tarjeta; el texto de
+            // abajo se apaga con la barra en vez de quedarse ahí colgado.
             if (!payload.email) {
                 notice(payload.message || (payload.ok === false ? 'The operation failed.' : 'Done.'),
                        payload.ok === false ? 'error' : 'ok');

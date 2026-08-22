@@ -298,6 +298,7 @@ No hay framework: son guiones sueltos, sin dependencias salvo donde se indica.
 | `tools/test_installs_prefix.py` | Encontrar Trove dentro de prefijos de Proton y Wine (necesita mingw-w64). |
 | `tools/test_proton_runner.py` | Elegir el runner del prefijo y avisar del símbolo que le falta al Wine del sistema. |
 | `tools/test_launch_order.py` | Que «Launch all» reparta una partida por cuenta y que el auto-relog haga lo que dice. |
+| `tools/test_statusbar.py` | Que el indicador de la barra inferior se encienda y se apague con lo que hay en marcha (necesita playwright). |
 | `tools/test_wine_helper.py` | La entrega del ticket de extremo a extremo bajo Wine (necesita wine64 y mingw-w64). |
 | `tools/check_linux.py` | No es una prueba: comprueba que ESTE equipo está listo para usarla en Linux. |
 
