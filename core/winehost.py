@@ -521,6 +521,18 @@ class WineHelper:
         code = int(res[0])
         return None if code == -1 else code
 
+    def wait_until_ready(self, pid: int, timeout: float = 120.0) -> int:
+        """Espera a que esa partida acabe de arrancar, DENTRO del prefijo.
+
+        Devuelve lo que devuelva ``WaitForInputIdle`` allí: 0 si ya está en pie,
+        0x102 si se acabó el tiempo, y -1 si el proceso ni siquiera se pudo
+        abrir. Como ``wait``, se atiende en un hilo del ayudante, así que
+        esperar aquí no deja al resto sin línea.
+        """
+        res = self.call("ready", int(pid), int(timeout * 1000),
+                        timeout=timeout + 30)
+        return int(res[0]) if res else -1
+
     def terminate(self, pid: int) -> bool:
         try:
             self.call("kill", int(pid), timeout=30)

@@ -509,7 +509,7 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
 
 /* --- esperar la salida, sin bloquear el bucle de órdenes ----------------- */
 
-struct wait_job { long id; DWORD pid; };
+struct wait_job { long id; DWORD pid; DWORD ms; };
 
 static DWORD WINAPI wait_thread(LPVOID arg)
 {
@@ -527,6 +527,29 @@ static DWORD WINAPI wait_thread(LPVOID arg)
     GetExitCodeProcess(h, &code);
     CloseHandle(h);
     emit("%ld ok %ld", job->id, (long)code);
+    free(job);
+    return 0;
+}
+
+/* --- «¿ya ha arrancado del todo?» ---------------------------------------
+ *
+ * WaitForInputIdle vuelve cuando el proceso ha terminado de inicializarse y
+ * está esperando entrada. No enumera ni toca ventana ninguna: sólo espera. Es
+ * lo que separa «el proceso existe» de «el juego está en pie», y hace falta
+ * para no lanzar la siguiente cuenta encima de la anterior.
+ */
+static DWORD WINAPI ready_thread(LPVOID arg)
+{
+    struct wait_job *job = (struct wait_job *)arg;
+    HANDLE h = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION, FALSE, job->pid);
+    if (!h) {
+        emit("%ld ok -1", job->id);
+        free(job);
+        return 0;
+    }
+    DWORD res = WaitForInputIdle(h, job->ms);
+    CloseHandle(h);
+    emit("%ld ok %lu", job->id, (unsigned long)res);
     free(job);
     return 0;
 }
@@ -633,13 +656,19 @@ int main(void)
             }
             if (ticket) SecureZeroMemory(ticket, strlen(ticket));
             free(exe8); free(ticket); free(auth); free(parent8);
-        } else if (strcmp(cmd, "wait") == 0) {
+        } else if (strcmp(cmd, "wait") == 0 || strcmp(cmd, "ready") == 0) {
             char *pid_tok = next_token(&cursor);
+            char *ms_tok = next_token(&cursor);
             struct wait_job *job = (struct wait_job *)malloc(sizeof *job);
             if (!job) { emit_err(id, "sin memoria"); continue; }
             job->id = id;
             job->pid = pid_tok ? (DWORD)strtoul(pid_tok, NULL, 10) : 0;
-            HANDLE th = CreateThread(NULL, 0, wait_thread, job, 0, NULL);
+            job->ms = ms_tok ? (DWORD)strtoul(ms_tok, NULL, 10) : 120000;
+            /* Las dos esperas van en su propio hilo: el bucle de órdenes tiene
+               que seguir atendiendo mientras una partida arranca o dura. */
+            LPTHREAD_START_ROUTINE fn = (strcmp(cmd, "wait") == 0)
+                                        ? wait_thread : ready_thread;
+            HANDLE th = CreateThread(NULL, 0, fn, job, 0, NULL);
             if (th) CloseHandle(th);
             else { emit_err(id, "could not create the wait thread"); free(job); }
         } else if (strcmp(cmd, "kill") == 0) {

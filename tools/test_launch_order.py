@@ -82,6 +82,9 @@ class FakeHost:
         self.spawns: list[tuple[float, int]] = []
         self.next_pid = 4000
         self.delay = 0.2          # lo que tarda el loader en levantar el juego
+        self.ready_delay = 0.6    # y lo que tarda el juego en estar en pie
+        self.ready_at: dict[int, float] = {}
+        self.ready_log: list[tuple[float, int]] = []
         self.crash_on_death = False
 
     # -- lo que usa el servicio --
@@ -105,7 +108,18 @@ class FakeHost:
                     if name.lower() == "trove_x64.exe" and p not in exclude]
         got = mine[0] if mine else pid
         self.spawns.append((time.monotonic(), got))
+        self.ready_at[got] = time.monotonic() + self.ready_delay
         return got
+
+    def wait_until_ready(self, pid, timeout=120.0, log=print):
+        """El juego tarda en levantarse; hasta entonces, aquí se espera."""
+        deadline = self.ready_at.get(pid, 0.0)
+        while time.monotonic() < deadline:
+            if pid not in self.procs:
+                return False
+            time.sleep(0.02)
+        self.ready_log.append((time.monotonic(), pid))
+        return pid in self.procs
 
     def wait_for_exit(self, pid):
         event = self.events.get(pid)
@@ -180,6 +194,8 @@ svc = TestService(log=lambda *a: None)
 # ORDEN, no la espera, así que se acorta. Que el de verdad exista se comprueba
 # aparte, que para eso es una constante.
 check("hay un respiro real entre arranques", service._LAUNCH_GAP >= 2.0)
+# El juego de mentira tarda MÁS en levantarse que el respiro entre arranques: si
+# el turno se soltara al ejecutar en vez de al estar en pie, se notaría.
 service._LAUNCH_GAP = 0.3
 
 # --- 1) cuatro cuentas a la vez, como «Launch all» --------------------------
@@ -204,6 +220,16 @@ check("no se entregó dos veces el mismo proceso",
 gaps = [b - a for (a, _p1), (b, _p2) in zip(host.spawns, host.spawns[1:])]
 check("los arranques van de uno en uno, no todos a la vez",
       all(gap >= service._LAUNCH_GAP for gap in gaps))
+
+# Y lo que pedía el caso real: no se lanza la siguiente hasta que la anterior
+# está levantada. Con el anti-cheat por medio, arrancar encima de una partida a
+# medio abrir hace que el loader se caiga sin llegar a lanzar nada.
+ready = {pid: when for when, pid in host.ready_log}
+# (de la última no hace falta: nadie la sigue, y su espera aún está en marcha)
+check("ninguna cuenta arranca antes de que la anterior esté en pie",
+      len(ready) >= len(EMAILS) - 1
+      and all(when >= ready[previous]
+              for (_t, previous), (when, _pid) in zip(host.spawns, host.spawns[1:])))
 
 # --- 2) cerrar una no toca a las demás --------------------------------------
 victim = running[EMAILS[0]]
@@ -285,6 +311,55 @@ host.die(third, 1)
 check("la partida caída sale de la lista", waitfor(lambda: not svc.running_list()))
 time.sleep(6.0)
 check("una partida que se cae al instante no se relanza", not svc.running_list())
+
+# --- 7) un loader que se cae no se queda con la partida de otro -------------
+#
+# Esto es lo de Windows, así que no se lanza nada: se le pone a NativeHost un
+# `inject` de mentira. Lo que se comprueba es la regla, que es la que faltaba en
+# los registros del usuario: el loader del anti-cheat murió con código 1021 sin
+# que nadie recogiera el ticket, y la cuenta se adjudicó el Trove de la vecina
+# porque «era nuevo».
+import types  # noqa: E402
+
+from core import gamehost  # noqa: E402
+
+OTHER_GAME = 12800          # la partida de otra cuenta, ya en marcha
+
+
+def fake_inject(exit_code, consumed=False, spawns_game=False):
+    mod = types.ModuleType("core.inject")
+    # Lo que había ANTES de lanzar, y lo que hay después: el juego nuevo (si
+    # llegó a arrancar) sólo aparece en la segunda lista.
+    before = [(OTHER_GAME, 1, "Trove_x64.exe")]
+    procs = list(before) + ([(13100, 999, "Trove_x64.exe")] if spawns_game else [])
+    mod.list_processes = lambda: list(procs)
+    mod.pids_by_name = lambda name: {p for p, _pp, n in before
+                                     if n.lower() == name.lower()}
+    mod.spawn = lambda *a, **k: {"pid": 999, "via_loader": True,
+                                 "consumed": consumed, "exit_code": exit_code}
+    mod.resolve_game_pid = lambda spawn_pid, name, exclude=(), log=print: next(
+        (p for p, _pp, n in procs if n.lower() == name.lower() and p not in exclude),
+        spawn_pid)
+    sys.modules["core.inject"] = mod
+    return mod
+
+
+native = gamehost.NativeHost()
+exe = game_dir / "Trove_x64.exe"
+
+fake_inject(exit_code=1021)
+try:
+    got = native.spawn(exe, "T", "AUTH", exclude={OTHER_GAME}, log=lambda *a: None)
+    check("un loader caído no adopta la partida de otra cuenta", got is None)
+except gamehost.HostUnavailable as exc:
+    check("un loader caído da error en SU cuenta, no la partida de otra",
+          "1021" in str(exc))
+
+# Pero si el juego sí arrancó y sólo tardó en recoger el ticket, la partida es
+# suya y no hay nada que abortar.
+fake_inject(exit_code=1021, spawns_game=True)
+got = native.spawn(exe, "T", "AUTH", exclude={OTHER_GAME}, log=lambda *a: None)
+check("y si el juego sí arrancó, se queda con el suyo", got == 13100)
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n" + ("TODO OK" if ok else "HAY FALLOS"))

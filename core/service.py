@@ -24,9 +24,11 @@ Lo que NO va en paralelo son dos cosas, y las dos por el mismo motivo —que se
 pisan entre ellas sobre un recurso compartido:
 
   * la fase de actualización, una por carpeta de juego (``_sync_for_play``), y
-  * el arranque en sí (``_spawn_game``), de uno en uno y con un respiro entre
-    cuentas, porque el proceso del juego se identifica por «el que no estaba
-    antes» y dos arranques simultáneos se adjudican el mismo.
+  * el arranque en sí (``_spawn_game``), de uno en uno: no se lanza la siguiente
+    cuenta hasta que la anterior está levantada. El proceso del juego se
+    identifica por «el que no estaba antes», y dos arranques a la vez se
+    adjudican el mismo —cuando el loader del anti-cheat no se cae directamente
+    sin lanzar nada.
 
 Auto-relog
 ----------
@@ -74,10 +76,16 @@ REGION_BRANCH = {"NA": ("live-us", "live"), "EU": ("live-us", "live"),
 _CANCEL_2FA = object()          # centinela que aborta un lanzamiento en espera de código
 _MIN_UPTIME_FOR_RELOG = 25.0    # segundos: si muere antes, no relanzamos
 
-# Respiro entre arranques consecutivos. No es estética: el proceso del juego se
-# identifica por "el que no estaba antes", así que el anterior tiene que haber
-# aparecido ya en la lista de procesos cuando el siguiente mire.
-_LAUNCH_GAP = 2.5
+# Respiro entre una partida ya levantada y el siguiente arranque. No es
+# estética: el proceso del juego se identifica por "el que no estaba antes", así
+# que el anterior tiene que haber aparecido ya en la lista cuando el siguiente
+# mire, y al loader del anti-cheat le sienta mal que se le pisen los arranques.
+_LAUNCH_GAP = 3.0
+
+# Tope de espera a que una partida termine de arrancar. No es el tiempo que se
+# espera —se sigue en cuanto el juego está en pie— sino hasta cuándo se aguanta
+# antes de dar por hecho que ya tarda demasiado y seguir con la siguiente.
+_LAUNCH_READY_TIMEOUT = 120.0
 
 # Cuánto damos por buena una sincronización recién hecha sobre la misma carpeta.
 # Lanzar diez cuentas no son diez comprobaciones de actualización seguidas de la
@@ -600,21 +608,39 @@ class LauncherService:
         queda sin vigilar y la otra aparece con el nombre de la vecina —que es
         justo lo que pasaba al pulsar «Launch all».
 
-        Por eso el arranque es exclusivo y con un respiro entre cuentas. Lo caro
-        (actualizar, autenticar, esperar el 2FA) queda fuera y sigue en paralelo.
+        Y el turno no se suelta al arrancar, sino cuando esa partida está EN PIE.
+        Lanzar la siguiente mientras la anterior todavía se levanta es lo que
+        hace que el loader se caiga sin llegar a lanzar nada (código 1021, por
+        ejemplo) y que su cuenta acabe adoptando la partida de la vecina.
+
+        Lo caro —actualizar, autenticar, esperar el 2FA— queda fuera y sigue
+        haciéndose en paralelo: lo que va en fila es el arranque.
         """
+        host = self._host()
         with self._spawn_gate:
             pause = self._last_spawn_at + _LAUNCH_GAP - time.monotonic()
             if pause > 0:
                 time.sleep(pause)
-            pid = self._host().spawn(
-                exe, ticket, auth_server,
-                parent_process_name=self._parent_process() or "",
-                exclude=self._tracked_pids(), log=log)
-            self._last_spawn_at = time.monotonic()
+            try:
+                pid = host.spawn(
+                    exe, ticket, auth_server,
+                    parent_process_name=self._parent_process() or "",
+                    exclude=self._tracked_pids(), log=log)
+            except Exception:
+                # Un arranque fallido también cuenta para el respiro: si el
+                # loader acaba de caerse, encadenar el siguiente al instante es
+                # la mejor forma de que se caiga otra vez.
+                self._last_spawn_at = time.monotonic()
+                raise
             # Apuntarla DENTRO del cerrojo: el siguiente lanzamiento tiene que
             # ver este pid en su lista de exclusión.
-            return self._track_launch(pid, info)
+            self._track_launch(pid, info)
+            if not host.wait_until_ready(pid, _LAUNCH_READY_TIMEOUT, log=log):
+                log(f"[play] the game (pid {pid}) closed while it was starting")
+            # El respiro se cuenta desde que está levantada, no desde que se
+            # ejecutó: es lo que se le concede al anti-cheat para asentarse.
+            self._last_spawn_at = time.monotonic()
+            return pid
 
     def _sync_for_play(self, game_dir: Path, branch: str, email: str) -> None:
         """La fase de actualización de un lanzamiento, una por carpeta.

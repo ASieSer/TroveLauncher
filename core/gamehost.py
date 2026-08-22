@@ -65,6 +65,15 @@ class GameHost:
         """``(pid, pid del padre, nombre)`` de lo que corre en este anfitrión."""
         return []
 
+    def wait_until_ready(self, pid: int, timeout: float = 120.0, log=print) -> bool:
+        """Espera a que la partida termine de arrancar. False si se murió.
+
+        Lanzar la siguiente cuenta mientras la anterior todavía se está
+        levantando es lo que hace que el loader del anti-cheat se caiga sin
+        lanzar nada, así que quien lanza espera aquí.
+        """
+        return True
+
     def close(self) -> None:
         pass
 
@@ -97,10 +106,62 @@ class NativeHost(GameHost):
 
         # Lo que ya corría con ese nombre, más lo que ya vigilamos.
         before = inject.pids_by_name(exe.name) | set(exclude or ())
-        spawn_pid = inject.spawn(exe, ticket, auth_server,
-                                 parent_process_name=parent_process_name or None,
-                                 log=log)
-        return inject.resolve_game_pid(spawn_pid, exe.name, exclude=before, log=log)
+        result = inject.spawn(exe, ticket, auth_server,
+                              parent_process_name=parent_process_name or None,
+                              log=log)
+
+        # El loader del anti-cheat se muere a veces sin llegar a lanzar nada
+        # (código 1021, por ejemplo). Si además nadie ha recogido el ticket, este
+        # lanzamiento no ha dejado ninguna partida: buscar «un Trove nuevo» sólo
+        # serviría para adjudicarse el de otra cuenta y enseñarlo con el nombre
+        # cambiado. Antes de rendirse, eso sí, se mira: el juego pudo arrancar y
+        # tardar más de la cuenta en recoger el ticket.
+        code = result.get("exit_code")
+        if not result["consumed"] and code:
+            fresh = [pid for pid, _ppid, name in inject.list_processes()
+                     if name.lower() == exe.name.lower() and pid not in before]
+            if not fresh:
+                raise HostUnavailable(
+                    f"Trove's anti-cheat loader exited with code {code} without "
+                    f"starting the game. Launching several accounts at once is "
+                    f"the usual cause; try this one again.")
+
+        return inject.resolve_game_pid(result["pid"], exe.name, exclude=before, log=log)
+
+    def wait_until_ready(self, pid: int, timeout: float = 120.0, log=print) -> bool:
+        """Espera a que el juego termine de arrancar. False si se quedó por el camino.
+
+        ``WaitForInputIdle`` es exactamente esta pregunta: vuelve cuando el
+        proceso ha acabado su inicialización y está esperando entrada. No mira,
+        mueve ni toca ninguna ventana —sólo espera— y es lo que separa «el
+        proceso existe» de «el juego ya está en pie».
+        """
+        import ctypes
+        from ctypes import wintypes
+
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        u = ctypes.WinDLL("user32", use_last_error=True)
+        SYNCHRONIZE = 0x00100000
+        PROCESS_QUERY_INFORMATION = 0x0400
+        k.OpenProcess.restype = wintypes.HANDLE
+        k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        u.WaitForInputIdle.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        u.WaitForInputIdle.restype = wintypes.DWORD
+
+        handle = k.OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION, False, int(pid))
+        if not handle:
+            return False
+        try:
+            res = u.WaitForInputIdle(handle, int(timeout * 1000))
+        finally:
+            k.CloseHandle(handle)
+        if res == 0x102:       # WAIT_TIMEOUT
+            log(f"[inject] pid {pid} is taking longer than {timeout:.0f}s to come up; "
+                f"carrying on")
+        alive = any(p == int(pid) for p, _ppid, _name in self.list_processes())
+        if not alive:
+            log(f"[inject] pid {pid} died while it was starting")
+        return alive
 
     def wait_for_exit(self, pid: int) -> int | None:
         import ctypes
@@ -311,6 +372,23 @@ class WineHost(GameHost):
             return self._connect().list_processes()
         except (WineError, HostUnavailable):
             return []
+
+    def wait_until_ready(self, pid: int, timeout: float = 120.0, log=print) -> bool:
+        from .winehost import WineError
+
+        try:
+            helper = self._connect()
+        except HostUnavailable:
+            return False
+        try:
+            res = helper.wait_until_ready(pid, timeout)
+        except WineError as exc:
+            log(f"[wine] could not wait for pid {pid}: {exc}")
+            return True
+        if res == 0x102:
+            log(f"[wine] pid {pid} is taking longer than {timeout:.0f}s to come up; "
+                f"carrying on")
+        return any(p == int(pid) for p, _ppid, _name in self.list_processes())
 
     def close(self) -> None:
         with self._lock:

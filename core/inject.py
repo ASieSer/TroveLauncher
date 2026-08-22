@@ -252,8 +252,15 @@ def find_pid_by_name(name: str) -> int | None:
 
 def spawn(game_exe: Path, ticket: str, auth_server: str, *,
           wait_ms: int = 30000, parent_process_name: str | None = None,
-          log=print) -> int:
-    """Inject the ticket and launch the game. Returns the new process id.
+          log=print) -> dict:
+    """Inject the ticket and launch the game.
+
+    Returns ``{"pid", "via_loader", "consumed", "exit_code"}`` for the process we
+    started — the LOADER's pid when the anti-cheat is in the way, so the caller
+    still has to resolve the game's own pid (see ``resolve_game_pid``).
+    ``consumed`` says whether the game picked the ticket up, and ``exit_code`` is
+    the loader's, when it already died. Those two together are what tells a
+    launch that failed from one that is merely slow.
 
     `game_exe` points at the real game binary (e.g. GameLive/Trove_x64.exe). If
     the XIGNCODE loader sits next to it we launch THROUGH the loader (the game
@@ -383,7 +390,9 @@ def spawn(game_exe: Path, ticket: str, auth_server: str, *,
     pid = pi.dwProcessId
 
     res = kernel32.WaitForSingleObject(hevent, wait_ms)
-    if res == WAIT_OBJECT_0:
+    consumed = res == WAIT_OBJECT_0
+    exit_code = None
+    if consumed:
         log(f"[inject] game consumed the ticket (pid {pid})")
     elif res == WAIT_TIMEOUT:
         code = wintypes.DWORD()
@@ -391,7 +400,8 @@ def spawn(game_exe: Path, ticket: str, auth_server: str, *,
         if code.value == STILL_ACTIVE:
             log(f"[inject] WARNING: pid {pid} didn't signal in {wait_ms}ms; may still recover")
         else:
-            log(f"[inject] ERROR: pid {pid} exited (code {code.value}) before consuming ticket")
+            exit_code = int(code.value)
+            log(f"[inject] ERROR: pid {pid} exited (code {exit_code}) before consuming ticket")
     else:
         log(f"[inject] WaitForSingleObject -> 0x{res:x}")
 
@@ -401,4 +411,5 @@ def spawn(game_exe: Path, ticket: str, auth_server: str, *,
     # process handle is safe to release here.
     _SESSION_HANDLES.extend((hmap, hevent))
     kernel32.CloseHandle(pi.hProcess)
-    return pid
+    return {"pid": pid, "via_loader": via_loader, "consumed": consumed,
+            "exit_code": exit_code}

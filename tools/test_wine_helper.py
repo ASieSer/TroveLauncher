@@ -149,6 +149,18 @@ try:
     # --- 3) matar una partida ---------------------------------------------
     res, _, _ = run_case("kill", with_loader=False, stay=True)
     check("una partida que no termina sigue viva", res["pid"] > 0)
+
+    # Antes de lanzar la siguiente cuenta se pregunta si ésta ya está en pie
+    # (WaitForInputIdle dentro del prefijo). Lo que importa aquí es que la
+    # pregunta se conteste y no deje el canal colgado: el juego de mentira es de
+    # consola y no tiene cola de mensajes, así que Wine dirá lo que diga.
+    started = time.monotonic()
+    answer = helper.wait_until_ready(res["pid"], 4.0)
+    check("preguntar si la partida ya arrancó contesta y no cuelga",
+          isinstance(answer, int) and time.monotonic() - started < 6.0)
+    check("y de un pid que no existe se contesta que no",
+          helper.wait_until_ready(4242424, 2.0) == -1)
+    check("el ayudante sigue atendiendo después", helper.call("ping")[0].isdigit())
     check("se puede cerrar", helper.terminate(res["pid"]) is True)
     code = helper.wait_for_exit(res["pid"])
     check("y wait se entera de que murió", code is not None and code != 7)
