@@ -1,312 +1,330 @@
 # Trove Accounts Hub
 
-Launcher propio para Trove: mantiene la instalación al día contra el CDN de
-Trion, se autentica con tus credenciales de Glyph y arranca el juego, sin
-necesidad del cliente de Glyph. **Windows y Linux** — en Linux el juego se lanza
-dentro de su prefijo de Wine o Proton (ver [Linux](#linux)).
+A launcher for Trove that keeps the game up to date against Trion's CDN, signs
+in with your Glyph credentials and starts the game — without the Glyph client.
+Built for people who run several accounts at once.
 
-Interfaz HTML/CSS/JS sobre pywebview (WebView2 en Windows, WebKitGTK en Linux),
-backend Python.
+**Windows and Linux.** On Linux the game launches inside its Wine or Proton
+prefix (see [Linux](#linux)).
 
-> Porta código de [BetterTroveTools](https://github.com/AallynReed/BetterTroveTools)
-> (MIT). Ver [`NOTICE.md`](NOTICE.md).
+> Ports code from [BetterTroveTools](https://github.com/AallynReed/BetterTroveTools)
+> (MIT). See [`NOTICE.md`](NOTICE.md).
 
-## Requisitos
+---
 
-- Python 3.10 o superior
-- Una cuenta de Glyph con Trove
-- **En Windows**: WebView2 Runtime, que ya viene con Windows 11
-- **En Linux**: Wine, y WebKitGTK para la ventana
+## Getting it
 
-## Instalación
+### Windows
+
+Download `TroveAccountsHub.exe` and run it. That is the whole installation:
+one file, no Python, no dependencies, nothing written to Program Files.
+
+The interface is drawn by the **Microsoft Edge WebView2 runtime**. Windows 11
+includes it and Windows 10 gets it with Edge, so it is almost certainly already
+on your machine. If it is not, the app says so on start-up and links to the
+[Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+
+### From source
 
 ```bash
 pip install -r requirements.txt
-```
-
-En Linux hacen falta además dos cosas del sistema, porque no vienen por pip:
-
-```bash
-# la ventana (pywebview dibuja con el WebKitGTK del sistema)
-sudo apt install python3-gi gir1.2-webkit2-4.1
-# lanzar el juego, que es de Windows
-sudo apt install wine64
-```
-
-> **Mejor con Proton.** Si el juego está instalado dentro de un prefijo de
-> Proton, la aplicación lo lanza con el Proton de ese prefijo sin que haya que
-> decirle nada, y hace bien: al Wine del sistema le suele faltar un símbolo que
-> el anti-cheat de Trove necesita — ver [Linux](#linux).
-
-> **Si usas un entorno virtual, créalo con `--system-site-packages`.** `gi` es
-> un paquete del sistema y un venv normal no lo ve, así que la ventana no
-> abriría:
->
-> ```bash
-> python3 -m venv --system-site-packages .venv
-> ```
-
-El llavero del escritorio (GNOME Keyring, KWallet…) es donde se guardan la
-contraseña y el ticket; suele estar ya en cualquier escritorio. Sin él la
-aplicación funciona, pero no recuerda nada — ver *Almacenamiento*.
-
-`python tools/check_linux.py` dice de una vez qué falta: el motor de la ventana,
-Wine, el ayudante, el llavero y las instalaciones que encuentra.
-
-## Uso
-
-```bash
 python main.py
 ```
 
-Con `--debug` se abren las DevTools de WebView2 con F12:
+Python 3.10 or newer. `--debug` opens WebView2's DevTools with F12.
+
+---
+
+## Where your data lives
+
+**There is no server. This project does not have one.** No account of yours is
+registered anywhere, nothing is uploaded, and there is no telemetry, analytics
+or crash reporting. Nobody involved in this project can see your accounts,
+because there is nowhere for them to be seen.
+
+Everything the application knows lives in one folder on your own machine:
+
+| | |
+| --- | --- |
+| **Windows** | `%APPDATA%\TroveAccountsHub` |
+| **Linux** | `$XDG_DATA_HOME/TroveAccountsHub`, or `~/.local/share/TroveAccountsHub` |
+
+What is in it:
+
+| File | What it holds |
+| --- | --- |
+| `prefs.json` | Your accounts, groups, display names and settings. Plain JSON — open it and read it. |
+| `prefs.json.bak` | The previous copy, so a power cut cannot lose your accounts. |
+| `cred-<hash>.bin` | One saved password, encrypted. |
+| `auth-<hash>.bin` | One Trion session ticket, encrypted. |
+| `update-<branch>-<hash>.sqlite` | Which game files are on disk, so updates only download what changed. |
+| `macaddr.txt` | A device id — see below. |
+
+The `<hash>` in those filenames is just a short digest of the email, used to
+keep several accounts apart. It is a filename, not a security measure.
+
+### Passwords and tickets are never stored in the clear
+
+A password, and a Trion ticket (a live session credential, good for about 48
+hours), go to the operating system's own secret store — never into a readable
+file:
+
+| | Where | What protects it |
+| --- | --- | --- |
+| Windows | `cred-*.bin`, `auth-*.bin` in the folder above | **DPAPI**, user scope: only your Windows user, on this machine, can decrypt them |
+| Linux | Your desktop keyring (GNOME Keyring, KWallet…) | Your login session — the files never touch our folder at all |
+| Neither available | Nowhere | — |
+
+**If there is nowhere safe to put them, they are not saved.** With no DPAPI and
+no keyring, the password is simply not remembered and the ticket stays in
+memory until you close the app. That is more annoying and it is the right
+behaviour: an earlier version fell back to plaintext, and that is exactly what
+must not happen to a live credential.
+
+Saving the password is optional — turn *Remember passwords* off in Settings and
+nothing is written at all. Your accounts stay in the list either way; the
+setting only covers the password.
+
+### `macaddr.txt` is not your MAC address
+
+Trion's sign-in expects a device identifier field. Rather than read your real
+network hardware address, the app **generates six random bytes on first run**
+and reuses them so the value stays stable between sessions
+(`secrets.token_bytes(6)` in `core/trionauth.py`). Delete the file and you get
+a new random one. Nothing about your hardware is read or sent.
+
+### The only two places anything is sent
+
+| Host | What for |
+| --- | --- |
+| `auth.trionworlds.com` | Signing in. Your Glyph email and password go here, over HTTPS, and come back as a ticket. This is Trion's own server — the same one the official Glyph client uses. There is no other way to log into Trove. |
+| `trove-update.dyn.triongames.com` | Trion's update CDN: the game's own files. No credentials are involved. |
+
+That is the complete list. The interface makes no network requests of its own —
+fonts, icons and styles all ship inside the app — and nothing is contacted on
+start-up.
+
+**Check it yourself.** Every URL in the source, in one command:
 
 ```bash
-python main.py --debug
+grep -rnoE "https?://[^\"' )]+" --include=*.py --include=*.js --include=*.html .
 ```
 
-## Qué hace cada cosa
+You will find those two, plus `w3.org` — the SVG XML namespace, which is an
+identifier and not an address — and the Microsoft link that gets printed in the
+WebView2 error message. Nothing else.
 
-### Núcleo (`core/`)
+### Removing everything
 
-| Módulo | Responsabilidad |
+Delete the folder listed above and nothing of yours remains — the executable
+keeps nothing elsewhere and touches no registry keys of its own. On Linux, also
+remove the keyring entries under the service name *Trove Accounts Hub*.
+
+---
+
+## Using it
+
+Add an account with its Glyph email, give it a display name, drop it into a
+group. Each card carries its own buttons:
+
+| | |
 | --- | --- |
-| `cdn.py` | Cliente del CDN de actualizaciones. Tres capas: puntero (versión actual) → manifiesto (`path:hash:size`) → archivos. |
-| `updater.py` | Sincronización incremental con estado en SQLite. Nunca borra archivos. |
-| `trionauth.py` | Autenticación contra `auth.trionworlds.com`, 2FA por email, keep-alive y caché del ticket cifrada con DPAPI. |
-| `inject.py` | Entrega del ticket al juego tal y como lo hace Glyph: blob RIFT cifrado con RC4 en un file-mapping heredable. |
-| `launch.py` | Cadenas de servidor de autenticación por región. |
-| `rift.py` | El blob del ticket (RC4 + cabecera «RIFT»). Código puro, compartido con el ayudante de Wine. |
-| `gamehost.py` | Lanzar, esperar, cerrar: Windows directo o, en Linux, a través de Wine. |
-| `winehost.py` | El otro extremo del ayudante que corre dentro del prefijo. |
-| `vault.py` | Dónde se guardan los secretos: DPAPI en Windows, llavero del escritorio en Linux. |
-| `installs.py` | Detección de instalaciones: registro, Steam y carpetas propias. |
-| `prefs.py` | Preferencias, cuentas y contraseñas cifradas con DPAPI. |
-| `service.py` | Orquestador: hilo de trabajo, 2FA, auto-relog y progreso. |
+| **Delete** | Removes the account, its saved password and its cached ticket. |
+| **Edit** | Display name, server, group, password, and a flag for accounts you want struck through. |
+| **Test login** | Signs in against Trion without launching, so you know a password works before you need it. |
+| **Auto-relog** | Per account. Lit means on. |
+| **Launch** | Starts the game. Turns into **Stop** while it runs. |
 
-### Interfaz (`web/`)
+Each account carries its own region (NA / EU / PTS), so a PTS account and a
+live one can sit side by side. NA and EU share the Live install; PTS needs its
+own folder.
 
-| Fichero | Responsabilidad |
-| --- | --- |
-| `index.html` | Estructura: barra superior con la marca, barra de acciones, tablero de cuentas, barra de estado y panel de ajustes. |
-| `img/trove-accounts-hub.svg` | Logo propio: cubo isométrico y rótulo en dos líneas justificadas al mismo ancho. El texto va trazado a curvas desde la Comfortaa que ya viaja con la app, así que no depende de ninguna fuente al pintarse. Lo genera `tools/make_logo.py` (`pip install fonttools brotli`), que no hace falta para usar la aplicación. |
-| `css/app.css` | Tema oscuro plano. Un único color vivo —el acento— tiñe el fondo entero en un porcentaje bajo y marca la acción principal, los estados activos y la ruta de la instalación en uso. Los **estados** no lo usan: verde jugando, cian comprobada, ámbar en marcha, rojo fallida, y gris lo que aún no se sabe. Son fijos a propósito: un estado no puede depender de qué acento toque hoy. |
-| `js/app.js` | Todo el comportamiento: pintado del tablero, arrastrar y soltar, diálogos, preferencias y eventos que llegan del backend. |
+Account status lives on the card and nowhere else — a group header does not
+summarise it, because "2 running" there says nothing about *which* two and
+gives you nothing to press.
 
-**La barra superior enseña sólo una imagen**: el logo del tema puesto, sin
-nombre al lado. Dos de los tres logos de club son rótulos que ya llevan el
-nombre dentro, así que escribirlo aparte lo decía dos veces en unos temas y una
-en otros. Quien nombra la aplicación es la barra de estado, abajo a la
-izquierda, con el mismo texto se ponga el tema que se ponga. El logo propio va
-como máscara CSS, no como imagen, para que tome el color de acento.
+### Launching a group
 
-Las cuentas se pintan siempre como tarjetas, agrupadas por categorías que se
-pliegan y se reordenan arrastrando. **El estado de una cuenta vive en su
-tarjeta y en ningún otro sitio**: la cabecera de un grupo no lo resume, porque
-repetir «2 running» ahí no dice de quién es ni deja actuar sobre ello. Lo único
-global es el recuento del encabezado y los mensajes de operación de la barra
-inferior, donde también está la versión.
+**"Launch all" starts them one at a time.** The accounts are prepared in
+parallel — updating, authenticating, waiting for 2FA — but the actual starts
+queue up, with a pause between them, and the next one does not go until the
+previous game is up.
 
-#### Lanzar y volver a entrar
+That is not caution for its own sake. With the anti-cheat loader in the way you
+do not launch the game, you launch the loader; the game's process has to be
+hunted down afterwards, and the only thing that identifies it is that it was not
+there before. Two simultaneous starts settle on the same Trove, and you end up
+with one session unwatched and another showing under its neighbour's name. One
+game folder is also updated once, not once per account.
 
-- **«Launch all» lanza de una en una.** Las cuentas se preparan a la vez
-  (actualizar, autenticar), pero **arrancan en fila y con un respiro entre
-  ellas**. Con el loader del anti-cheat por medio, el pid del juego hay que
-  salir a buscarlo entre los procesos y lo único que lo distingue es que antes no
-  estaba: dos arranques simultáneos se adjudican el mismo Trove y acaban con una
-  partida sin vigilar y otra mostrada con el nombre de la vecina. Y una carpeta
-  se actualiza una vez, no una por cuenta.
-- **Auto-relog, por cuenta, con el botón del bucle.** Vuelve a entrar cuando la
-  partida termina, **se haya caído o se haya cerrado con normalidad**: que te
-  echen por inactividad cierra el juego limpiamente y es justo la vez que uno
-  quiere volver. No se relanza lo que cierras tú desde el launcher, ni lo que se
-  muere nada más arrancar. Si la caída dejó abierta la ventana de reporte de
-  fallos de Trove, se cierra con la partida.
+### Auto-relog
 
-#### Apariencia
+Per account, on the loop button. It signs back in when the game ends — whether
+it crashed or closed cleanly, because being kicked for idling looks like a clean
+exit from here and you want the account back either way.
 
-Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
-`prefs.json`:
+It does **not** relaunch what you closed yourself from the launcher, and not
+anything that dies within the first few seconds, so a failing start cannot
+chain. If the crash left Trove's crash reporter open, that gets closed too;
+otherwise ten relogs leave you with ten dialogs.
 
-- **Font** — tipografía de toda la interfaz: del sistema, Quicksand, Comfortaa
-  o Quantico. Las tres de Google Fonts viajan en `web/fonts/` y se cargan de
-  ahí: la ventana abre desde `file://` y no puede depender de que haya internet.
-- **Club theme** — `Mystic Cave`, `Arsyn`, `Sayro` o ninguno. Un club cambia el
-  logo de la barra superior por el suyo (`web/img/`) y **fija el acento** a su
-  color: morado en Mystic Cave y Arsyn, rojo oscuro en Sayro.
-  Mientras haya club puesto, el selector de acento se ve pero no se toca.
-  Quitarlo devuelve el color que hubiera elegido el usuario, que se guarda
-  intacto todo el tiempo.
-- **Accent** — dos filas: arriba la paleta fija, abajo los colores propios. Un
-  color a medida **se guarda al elegirlo** (el botón `+` abre el selector del
-  sistema) y se queda ahí para volver a él; el que esté en uso siempre está
-  guardado, y el resto se olvidan con la `×` que aparece encima. Son ocho
-  huecos: al llenarlos, el más viejo cede el sitio.
-  Cuando se escribe con el acento en vez de rellenar con él —la ruta de arriba a
-  la derecha—, se aclara lo justo para llegar al 4,5:1 de la WCAG: un acento
-  oscuro como el rojo de Sayro, en texto pequeño, se hundía en el fondo.
-- **Tint strength** — cuánto acento llega al fondo. **No lo bloquea ningún
-  tema**: es intensidad, no color, y sigue siendo del usuario aunque el club
-  mande en el acento. A 0% la interfaz queda gris neutra.
-- **Background particles** — el campo de estrellas del fondo.
+A background relog cannot ask you for anything, so it needs a saved password.
 
-### Linux
+### Appearance
 
-Trove es un juego de Windows: en Linux corre bajo Wine o Proton. La aplicación,
-en cambio, corre nativa — y ahí aparece el único problema de verdad del port.
+One accent colour tints every surface at a low percentage — the whole window
+shares a colour temperature rather than wearing a colour. Pick from the palette
+or save your own; the tint slider controls how much of it comes through.
 
-**El ticket no se puede entregar desde fuera del prefijo.** El juego no lo lee
-de la línea de órdenes: lo saca de un *file-mapping* de Windows haciendo
-`OpenProcess(pid del lanzador)` + `DuplicateHandle`. Son objetos del kernel de
-Windows; un proceso Linux nativo ni los crea ni los comparte. No es cuestión de
-portar unas llamadas: no existe el equivalente.
+**Club themes** (Mystic Cave, Arsyn, Sayro) swap the top-bar mark for the club's
+logo and pin the accent to the club's colour. The tint stays yours — that is
+intensity, not colour.
 
-La salida es un ayudante que vive donde vive el juego:
+Status colours never follow the accent: green running, cyan verified, amber
+working, red failed, grey not known yet. A state cannot depend on what colour
+you picked today.
 
-```
-  interfaz + servicio  (Python, nativo en Linux)
-            │  órdenes por tubería
-            ▼
-  native/troveinject.exe   ← corre con wine, DENTRO del prefijo
-            │  CreateProcess + handles heredables
-            ▼
-  xldr_Trove_GL_loader_x64.exe → Trove_x64.exe
+On Windows the icon in the title bar and on the taskbar follows the accent too.
+On Linux it stays the default green cube: Wayland has no protocol for a window
+to set its own icon, so the icon comes from the `.desktop` entry.
+
+---
+
+## Linux
+
+The game is a Windows one, so it lives inside a Wine or Proton prefix and is
+launched from there. Two things are needed from the system, because neither
+comes from pip:
+
+```bash
+sudo apt install python3-gi gir1.2-webkit2-4.1   # the window
+sudo apt install wine64                          # launching the game
 ```
 
-Ese ayudante hace exactamente lo que hace `inject.py` en Windows, y por las
-mismas razones. Detalles que importan:
+Then:
 
-- **Un solo ayudante por sesión, y vive mientras viva la aplicación.** Los
-  handles del ticket tienen que seguir abiertos mientras haya partida, porque el
-  juego los duplica *de él*. Es la misma fuga deliberada de dos handles por
-  lanzamiento que hace Glyph.
-- **El prefijo se deduce de la ruta del juego.** Un prefijo distinto es
-  literalmente otro disco C:, donde el juego no existe. Si la instalación cuelga
-  de `…/compatdata/<appid>/pfx/drive_c/…`, ése es el prefijo. Se puede forzar
-  otro en Ajustes → Wine.
-- **Y el prefijo elige el runner.** Si es de Proton, se lanza con *ese* Proton
-  —el que lo creó, que Steam apunta en `config_info` y en `version`— y no con el
-  Wine del PATH. No es un capricho: el loader del anti-cheat importa
-  `WSCEnumProtocols32` de `ws2_32`, y **el Wine del sistema no siempre exporta
-  ese símbolo**. Cuando falta, el loader muere con un «procedure entry point
-  could not be located», el juego no llega a abrirse y el launcher se queda en
-  *Logging in* sin que nada explique por qué. Proton sí lo trae. Los Proton
-  instalados se listan en Ajustes → Wine para elegir uno con un clic, y si el
-  runner en uso no tiene el símbolo se avisa **antes** de lanzar (también lo dice
-  `tools/check_linux.py`).
-- **Las instalaciones se buscan dentro de los prefijos**: los de Proton bajo
-  `steamapps/compatdata/*/pfx`, y los de Wine al uso (`~/.wine`, Lutris,
-  Bottles). Dentro, la estructura es la de Windows.
-- El binario del ayudante viaja compilado (`native/troveinject.exe`, 59 KB)
-  porque quien juega en Linux no tiene por qué tener un compilador cruzado. La
-  fuente está al lado y `tools/build_helper.sh` lo reproduce con mingw-w64.
+```bash
+tools/install_linux.sh
+```
 
-Lo que **no** cambia entre sistemas: el actualizador, la autenticación, el
-almacén de estado y toda la interfaz. Son Python puro y ya cruzaban.
+That checks what is missing, sets up an environment, and puts the app in your
+applications menu. It creates its virtualenv with `--system-site-packages`
+because `gi` is a system package that a plain venv cannot see — the single most
+common reason the app starts and then cannot open a window.
 
-### Detalles que conviene no romper
+`python tools/check_linux.py` reports what this machine has: window engine,
+Wine, the helper, the keyring and the installs it can find. Paste its output if
+something will not start.
 
-**El hash del manifiesto no es recalculable.** Es un token opaco de "¿ha
-cambiado esto?", nunca un hash del contenido. Un archivo se vuelve a descargar
-si falta en disco o si su token difiere del que guardamos — jamás comparando un
-hash recalculado. Por eso un archivo modificado en local nunca se pisa.
+> **Proton is better than system Wine.** If the game is inside a Proton prefix,
+> the app launches it with that prefix's own Proton without being told. System
+> Wine often lacks `WSCEnumProtocols32`, which Trove's anti-cheat loader
+> imports: without it the loader dies with a "procedure entry point" dialog and
+> the game never opens. Settings → Wine lists the Protons it found.
 
-**El modo `adopt`.** Al apuntar por primera vez a una instalación que ya existe,
-la base de datos está vacía y una sincronización normal se traería el juego
-entero. Con `adopt`, cualquier archivo que ya esté en disco con el tamaño exacto
-del manifiesto se da por bueno. Reparar (`reset()` + `adopt=False`) fuerza la
-descarga completa cuando esa confianza no era correcta.
+### How the ticket gets in
 
-**Los handles del ticket se quedan abiertos a propósito.** El juego lee el blob
-con `OpenProcess(pid_del_launcher)` + `DuplicateHandle`. Si cerramos el mapping
-y el evento justo tras lanzar, el juego duplica un objeto vacío y vuelve a la
-pantalla de login. Por eso `inject.py` los guarda en `_SESSION_HANDLES` y los
-mantiene abiertos mientras el launcher viva.
+On Windows the app hands the game its ticket directly. On Linux it cannot: the
+game collects the ticket from a Windows file mapping by calling
+`OpenProcess(launcher pid)` + `DuplicateHandle`, and those are Windows kernel
+objects that a native Linux process can neither create nor share.
 
-**El launcher no toca las ventanas del juego.** Ni las trae al frente, ni las
-restaura, ni las enumera: nada de `EnumWindows`, `ShowWindow` ni
-`SetForegroundWindow`. Ahorrarle un alt-tab a alguien no compensa ponerse a
-manipular ventanas ajenas desde un cliente de terceros. Cerrar una partida sí
-sigue estando, porque el proceso lo arrancó el propio launcher.
+So a small Win32 helper (`native/troveinject.c`, shipped pre-built) runs inside
+the prefix and plays launcher for every account. It stays alive while any game
+is open, because the game keeps duplicating those handles from it.
 
-**Dos implementaciones del mismo blob.** El formato del ticket lo escriben
-`core/rift.py` (Python, para Windows) y `native/troveinject.c` (C, para Wine).
-Dos códigos que tienen que coincidir byte a byte o el juego rebota al login, así
-que no se confía en que coincidan: `tools/test_wine_helper.py` monta un Trove de
-mentira que recoge el ticket como el de verdad y comprueba que lo que descifra
-es *exactamente* lo que habría armado Windows.
+---
 
-**El loader del anti-cheat.** Si existe `xldr_Trove_GL_loader_x64.exe` junto al
-ejecutable, se lanza a través de él con el nombre del juego como `argv[1]` (no
-como `argv[0]`: ahí el loader aborta con el código 1038). Si no existe, se lanza
-el juego directamente.
+## How it works
 
-### Almacenamiento
+### Core (`core/`)
 
-Todo va a `%APPDATA%/TroveAccountsHub`:
-
-- `prefs.json` — preferencias, cuentas y alias
-- `auth-<hash>.bin` — ticket por cuenta, cifrado con DPAPI
-- `cred-<hash>.bin` — contraseña por cuenta, cifrada con DPAPI
-- `update-<rama>-<hash>.sqlite` — estado de "qué hay en disco" por instalación
-- `macaddr.txt` — identificador de dispositivo sintético, estable entre sesiones
-
-Las contraseñas nunca se guardan en texto plano: si DPAPI no está disponible,
-sencillamente no se recuerdan.
-
-**La carpeta anterior se adopta, no se abandona.** La aplicación se llamaba
-Trove Launcher y guardaba en `%APPDATA%/TroveLauncher`. Al arrancar por primera
-vez con el nombre nuevo, si la carpeta nueva no tiene `prefs.json` y la vieja sí,
-se copia su contenido entero y se deja constancia en `adopted-from.txt`. Detalles
-que importan:
-
-- Se **copia**, no se mueve: volver a una versión anterior sigue encontrando sus
-  datos donde estaban. El precio es un duplicado en disco.
-- Nunca pisa un fichero que ya exista en destino, y un fallo a medias no impide
-  arrancar: lo que se haya traído se queda y el resto sigue en la carpeta vieja.
-- Los blobs DPAPI (`auth-*.bin`, `cred-*.bin`) se descifran igual desde la ruta
-  nueva: van atados al usuario de Windows y a la máquina, no a la carpeta.
-- La entropía DPAPI de las contraseñas sigue diciendo
-  `TroveLauncher.credentials.v1`. Es un identificador, no un nombre a la vista:
-  cambiarlo dejaría ilegibles las contraseñas ya guardadas.
-
-Como esto corre una sola vez en la máquina de cada usuario y sobre sus cuentas,
-`tools/test_paths_adopt.py` lo repite a voluntad contra carpetas temporales
-(`python tools/test_paths_adopt.py`, sin dependencias).
-
-### Secretos
-
-La contraseña y el ticket —que es una credencial viva unas 48 horas— no se
-guardan en la carpeta de datos, sino en el almacén del sistema:
-
-| | Dónde | Qué lo protege |
-| --- | --- | --- |
-| Windows | `<datos>/cred-<hash>.bin`, `auth-<hash>.bin` | DPAPI, ámbito de usuario |
-| Linux | Llavero del escritorio (`keyring`) | La sesión del usuario |
-| Sin ninguno | En ningún sitio | — |
-
-**Si no hay almacén, no se guarda nada**: la contraseña no se recuerda y el
-ticket vive sólo en memoria, así que hay que volver a entrar en el siguiente
-arranque. Es molesto y es lo correcto; antes, fuera de Windows, el ticket se
-escribía en claro.
-
-### Pruebas
-
-No hay framework: son guiones sueltos, sin dependencias salvo donde se indica.
-
-| | Qué comprueba |
+| Module | Responsibility |
 | --- | --- |
-| `tools/test_vault.py` | El almacén de secretos y su degradación sin llavero. |
-| `tools/test_paths_adopt.py` | La adopción de la carpeta de datos anterior. |
-| `tools/test_installs_prefix.py` | Encontrar Trove dentro de prefijos de Proton y Wine (necesita mingw-w64). |
-| `tools/test_proton_runner.py` | Elegir el runner del prefijo y avisar del símbolo que le falta al Wine del sistema. |
-| `tools/test_launch_order.py` | Que «Launch all» reparta una partida por cuenta y que el auto-relog haga lo que dice. |
-| `tools/test_ui.py` | La interfaz en un navegador: el indicador de la barra inferior y los colores del tema (necesita playwright). |
-| `tools/test_wine_helper.py` | La entrega del ticket de extremo a extremo bajo Wine (necesita wine64 y mingw-w64). |
-| `tools/check_linux.py` | No es una prueba: comprueba que ESTE equipo está listo para usarla en Linux. |
+| `cdn.py` | Update CDN client: pointer (current version) → manifest (`path:hash:size`) → files. |
+| `updater.py` | Incremental sync with its state in SQLite. Never deletes files. |
+| `trionauth.py` | Sign-in against Trion, 2FA by email, keep-alive, cached ticket. |
+| `inject.py` | Hands the ticket to the game the way Glyph does: an RC4-encrypted RIFT blob in an inheritable file mapping. |
+| `rift.py` | That blob's format. Pure code, shared with the Wine helper. |
+| `launch.py` | The per-region auth-server string. |
+| `gamehost.py` | Launch, wait, close: Windows directly, or through Wine. |
+| `winehost.py` | The Linux end — picks the runner and drives the helper. |
+| `winicon.py` | The live window icon (Windows). |
+| `vault.py` | Where secrets go: DPAPI, or the desktop keyring. |
+| `installs.py` | Finding installs: registry, Steam, prefixes, custom folders. |
+| `prefs.py` | Preferences, accounts and groups, saved atomically. |
+| `paths.py` | Where everything on disk lives. |
+| `service.py` | Orchestrator: worker thread, 2FA, auto-relog, progress. |
 
-## Estado
+### Interface (`web/`)
 
-Funcionalidad completa y en uso. La interfaz ya no es un borrador, pero sigue
-moviéndose: lo que se toca son colores, densidad y rótulos, no lo que hay
-debajo.
+Plain scripts on a shared `window.App` namespace — not ES modules, because the
+page loads over `file://` and Chromium refuses module scripts from that origin.
+`core.js` creates the namespace, `app.js` starts everything.
+
+| | |
+| --- | --- |
+| `core.js` | Shared state, the Python bridge, DOM helpers, the status line. |
+| `icons.js` | Inline SVG icons, so they inherit `currentColor`. |
+| `theme.js` | Accent, club themes, fonts, contrast, starfield, window icon. |
+| `board.js` | The board: groups, account cards, region menu. |
+| `dragdrop.js` | Dragging accounts and groups. |
+| `modals.js` | Dialogs. |
+| `actions.js` | Launch, test login, stop, launch all. |
+| `settings.js` | The settings drawer and the install chips. |
+| `app.js` | Backend events, wiring, start-up. |
+
+Everything the launcher logs also appears in the log box under Settings, which
+matters because the packaged build has no console.
+
+### Things worth not breaking
+
+- **The anti-cheat loader takes the game's name as `argv[1]`**, not `argv[0]`.
+  Get that wrong and it aborts with exit code 1038 without launching anything.
+- **The ticket's handles are never closed.** The game duplicates them from the
+  launcher for the whole session; it is the same deliberate two-handle leak per
+  launch that Glyph makes.
+- **`prefs.json` is written atomically** — temp file, fsync, replace, with a
+  `.bak` kept. Writing over it directly truncates it first, and a power cut in
+  that instant loses every account.
+- **The DPAPI entropy still reads `TroveLauncher.credentials.v1`.** It is an
+  identifier, not a visible name: changing it would make already-saved passwords
+  unreadable.
+
+### The previous data folder is adopted, not abandoned
+
+The app used to be called Trove Launcher and stored in
+`%APPDATA%\TroveLauncher`. On first run under the new name, if the new folder
+has no `prefs.json` and the old one does, the contents are **copied** — not
+moved, so going back to an older version still finds its data — and
+`adopted-from.txt` records that it happened. Nothing already present is ever
+overwritten.
+
+---
+
+## Building
+
+```bash
+pip install pyinstaller
+pyinstaller TroveAccountsHub.spec
+```
+
+One self-contained executable in `dist/`, about 18 MB, starting in under two
+seconds. The recipe and the reasoning are in
+[`TroveAccountsHub.spec`](TroveAccountsHub.spec).
+
+Two generators, neither needed to use or build the app:
+
+- `tools/make_icon.py` — regenerates `web/img/app.ico` and `app.png` from the
+  brand cube (`pip install pillow`).
+- `tools/make_logo.py` — regenerates the brand SVG, with the wordmark traced to
+  curves so it depends on no font (`pip install fonttools brotli`).
+- `tools/build_helper.sh` — rebuilds the Win32 Wine helper (needs mingw-w64).
+  It ships pre-built; you only need this if you change the C.
+
+---
+
+## Status
+
+Complete and in use. The interface still moves — colours, density, labels — but
+what is underneath does not.

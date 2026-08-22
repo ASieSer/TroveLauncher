@@ -1,32 +1,43 @@
-# Atribución
+# Attribution
 
-Este proyecto porta y adapta código de **BetterTroveTools**, de Aallyn Reed,
-publicado bajo licencia MIT:
+This project ports and adapts code from **BetterTroveTools**, by Aallyn Reed,
+released under the MIT licence:
 
-- Repositorio: https://github.com/AallynReed/BetterTroveTools
+- Repository: https://github.com/AallynReed/BetterTroveTools
 - Copyright (c) 2026-Present Aallyn Reed
-- Texto completo de la licencia: [`LICENSE-BetterTroveTools`](LICENSE-BetterTroveTools)
+- Full licence text: [`LICENSE-BetterTroveTools`](LICENSE-BetterTroveTools)
 
-## Qué se ha portado
+## What was ported
 
-Los cinco módulos del núcleo, tomados de `backend/trove_launcher/` y adaptados
-al paquete `core/` de este proyecto:
+Five core modules, taken from `backend/trove_launcher/` and adapted to this
+project's `core/` package:
 
-| Fichero local | Origen | Cambios |
+| Local file | Origin | Changes |
 | --- | --- | --- |
-| `core/cdn.py` | `backend/trove_launcher/cdn.py` | Sin cambios funcionales. |
-| `core/updater.py` | `backend/trove_launcher/updater.py` | Sin cambios funcionales. |
-| `core/trionauth.py` | `backend/trove_launcher/trionauth.py` | Sin cambios funcionales. |
-| `core/inject.py` | `backend/trove_launcher/inject.py` | Sin cambios funcionales. |
-| `core/launch.py` | `backend/trove_launcher/launch.py` | Sin cambios funcionales. |
+| `core/cdn.py` | `backend/trove_launcher/cdn.py` | No functional changes. |
+| `core/updater.py` | `backend/trove_launcher/updater.py` | No functional changes. |
+| `core/trionauth.py` | `backend/trove_launcher/trionauth.py` | The ticket cache now goes to the system secret store (`core/vault.py`) instead of a file of its own. |
+| `core/inject.py` | `backend/trove_launcher/inject.py` | The RIFT blob was split out into `core/rift.py` so the Wine helper can mirror it; `resolve_game_pid` was added to find the game behind the anti-cheat loader. |
+| `core/launch.py` | `backend/trove_launcher/launch.py` | Only the per-region auth-server strings were kept. |
 
-A su vez, ese código fue vendorizado por BetterTroveTools desde el proyecto
-TroveImposter, según indica su propia documentación.
+That code was in turn vendored by BetterTroveTools from the TroveImposter
+project, as its own documentation states.
 
-La validación de ejecutables mediante cabecera PE que hay en `core/installs.py`
-se basa en `utils/executable.py` del mismo proyecto.
+The PE-header executable validation in `core/installs.py` is based on
+`utils/executable.py` from the same project.
 
-## Qué es propio de este repositorio
+## What is original to this repository
 
-`core/paths.py`, `core/prefs.py`, `core/installs.py`, `core/service.py`,
-`api.py`, `main.py` y todo lo que hay bajo `web/`.
+Everything else, in particular:
+
+- `core/service.py` — the orchestrator: worker thread, 2FA, per-account launch
+  queueing and auto-relog.
+- `core/paths.py`, `core/prefs.py` — where data lives and how it is saved.
+- `core/vault.py` — the system secret store, DPAPI or desktop keyring.
+- `core/rift.py` — the ticket blob's format, isolated so both launch paths share it.
+- `core/installs.py` — finding installations across registry, Steam and prefixes.
+- `core/gamehost.py`, `core/winehost.py`, `native/troveinject.c` — the Linux
+  launch path: a Win32 helper inside the Wine prefix, and the Python end that
+  drives it.
+- `core/winicon.py` — the live window icon.
+- `api.py`, `main.py`, and everything under `web/` and `tools/`.
