@@ -12,6 +12,10 @@
 # Shell scripts are LF everywhere, no exceptions: they are read by Linux.
 *.sh text eol=lf
 
+# And batch files are CRLF, for the same reason in reverse: cmd.exe is the
+# one reading them.
+*.bat text eol=crlf
+
 # Binaries git must not touch. The Wine helper in particular is a real PE
 # executable that ships pre-built; a single "line ending" fix would corrupt it.
 *.exe binary

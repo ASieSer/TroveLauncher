@@ -33,6 +33,9 @@ python main.py
 
 Python 3.10 or newer. `--debug` opens WebView2's DevTools with F12.
 
+To build the executable yourself rather than download it, see
+[Building the executable](#building-the-executable).
+
 ---
 
 ## Where your data lives
@@ -302,25 +305,44 @@ overwritten.
 
 ---
 
-## Building
+## Building the executable
+
+Double-click [`build.bat`](build.bat), or run it from a terminal:
+
+```
+build.bat
+```
+
+It checks for Python, installs PyInstaller and the app's dependencies if they
+are not there, and leaves `dist\TroveAccountsHub.exe` — one self-contained file
+of about 18 MB that starts in under two seconds and needs nothing installed on
+the machine it runs on.
+
+If you would rather drive it yourself:
 
 ```bash
-pip install pyinstaller
+pip install -r requirements.txt pyinstaller
 pyinstaller TroveAccountsHub.spec
 ```
 
-One self-contained executable in `dist/`, about 18 MB, starting in under two
-seconds. The recipe and the reasoning are in
+The recipe and the reasoning behind it are in
 [`TroveAccountsHub.spec`](TroveAccountsHub.spec).
 
-Two generators, neither needed to use or build the app:
+On Linux the same spec works, but read the note at the top of
+[`tools/install_linux.sh`](tools/install_linux.sh) first — a frozen build there
+means pulling in Qt WebEngine and a ~400 MB binary, which is why the supported
+route is that script instead.
 
-- `tools/make_icon.py` — regenerates `web/img/app.ico` and `app.png` from the
-  brand cube (`pip install pillow`).
-- `tools/make_logo.py` — regenerates the brand SVG, with the wordmark traced to
-  curves so it depends on no font (`pip install fonttools brotli`).
-- `tools/build_helper.sh` — rebuilds the Win32 Wine helper (needs mingw-w64).
-  It ships pre-built; you only need this if you change the C.
+### Regenerating what ships pre-built
+
+None of these is needed to use or build the app; the outputs are versioned.
+
+- `tools/make_icon.py` — the executable's icon, `web/img/app.ico` and
+  `app.png`, drawn from the brand cube (`pip install pillow`).
+- `tools/make_logo.py` — the brand SVG, with the wordmark traced to curves so it
+  depends on no font at paint time (`pip install fonttools brotli`).
+- `tools/build_helper.sh` — the Win32 helper the Linux launch path drives inside
+  the Wine prefix (needs mingw-w64). Only if you change the C.
 
 ---
 
