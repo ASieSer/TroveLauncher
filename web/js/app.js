@@ -1043,6 +1043,7 @@
         system: '"Segoe UI", system-ui, -apple-system, sans-serif',
         quicksand: 'Quicksand, "Segoe UI", system-ui, sans-serif',
         comfortaa: 'Comfortaa, "Segoe UI", system-ui, sans-serif',
+        quantico: 'Quantico, "Segoe UI", system-ui, sans-serif',
     };
 
     /** Color de texto legible sobre un fondo dado.

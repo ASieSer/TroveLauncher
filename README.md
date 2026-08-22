@@ -128,7 +128,9 @@ inferior, donde también está la versión.
 Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
 `prefs.json`:
 
-- **Font** — tipografía de toda la interfaz: del sistema, Quicksand o Comfortaa.
+- **Font** — tipografía de toda la interfaz: del sistema, Quicksand, Comfortaa
+  o Quantico. Las tres de Google Fonts viajan en `web/fonts/` y se cargan de
+  ahí: la ventana abre desde `file://` y no puede depender de que haya internet.
 - **Club theme** — `Mystic Cave`, `Arsyn`, `Sayro` o ninguno. Un club cambia el
   logo de la barra superior por el suyo (`web/img/`) y **fija el acento** a su
   color: morado en Mystic Cave y Arsyn, rojo oscuro en Sayro.
