@@ -54,7 +54,7 @@
     </div>
 </footer>
 
-<!-- ===================== Panel de ajustes ===================== -->
+<!-- ===================== Settings panel ===================== -->
 <div id="drawer-backdrop" class="backdrop hidden"></div>
 <aside id="drawer" class="drawer hidden">
     <div class="drawer-head">
@@ -207,7 +207,7 @@
     </details>
 </aside>
 
-<!-- ===================== Modal genérico ===================== -->
+<!-- ===================== Generic modal ===================== -->
 <div id="modal-backdrop" class="backdrop hidden">
     <div class="modal" id="modal">
         <h3 id="modal-title"></h3>
@@ -219,12 +219,23 @@
     </div>
 </div>
 
-<!-- Tooltip flotante (posicionado por JS; fuera de la tabla para que no lo recorte) -->
+<!-- Floating tooltip (positioned by JS; outside the board so nothing clips it) -->
 <div id="tooltip" class="tooltip hidden"></div>
 
-<!-- Menú contextual de instalación -->
+<!-- Installation context menu -->
 <div id="install-menu" class="popover hidden"></div>
 
+<!-- Plain scripts, not ES modules: the page loads over file:// and Chromium
+     refuses module scripts from that origin. Order matters — core.js creates
+     the window.App namespace and app.js starts everything. -->
+<script src="js/core.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/dragdrop.js"></script>
+<script src="js/modals.js"></script>
+<script src="js/actions.js"></script>
+<script src="js/board.js"></script>
+<script src="js/settings.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

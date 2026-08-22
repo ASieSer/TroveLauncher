@@ -1,0 +1,21 @@
+# Line endings, decided here instead of by each machine's core.autocrlf.
+#
+# This exists because tools/build_helper.sh was stored with CRLF, and a shell
+# script with CRLF does not run on Linux at all: the kernel reads the shebang as
+# `/bin/sh\r` and reports "bad interpreter: No such file or directory". The
+# scripts have to be LF wherever they are checked out, Windows included.
+
+# Normalise every text file to LF inside the repository. What lands in the
+# working tree still follows the platform, which is what Windows editors expect.
+* text=auto
+
+# Shell scripts are LF everywhere, no exceptions: they are read by Linux.
+*.sh text eol=lf
+
+# Binaries git must not touch. The Wine helper in particular is a real PE
+# executable that ships pre-built; a single "line ending" fix would corrupt it.
+*.exe binary
+*.woff2 binary
+*.png binary
+*.webp binary
+*.ico binary

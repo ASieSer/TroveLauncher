@@ -1,33 +1,31 @@
-"""Preferencias, cuentas, grupos y contraseñas recordadas.
+"""Preferences, accounts, groups and remembered passwords.
 
-Modelo de datos
----------------
+Data model
+----------
 
-Una **cuenta** es un objeto, no sólo un email::
+An **account** is an object, not just an email::
 
     {"email": "...", "name": "XxWolf_AlexX", "color": "#8b5cf6",
      "group": "a1b2c3d4" | None, "region": "NA" | "EU" | "PTS"}
 
-Un **grupo** agrupa cuentas y sólo lleva presentación::
+A **group** collects accounts and carries presentation only::
 
     {"id": "a1b2c3d4", "name": "Goats", "color": "#8b5cf6", "collapsed": false}
 
-El orden de las listas ES el orden que se ve en pantalla: reordenar arrastrando
-consiste en reescribir las listas. Las cuentas con ``group: None`` caen en la
-zona «sin grupo».
+The order of the lists IS the order seen on screen: reordering by dragging means
+rewriting the lists. Accounts with ``group: None`` fall into the "Ungrouped"
+area.
 
-Seguridad de las contraseñas
-----------------------------
+Password safety
+---------------
 
-Ni la contraseña ni el ticket se guardan aquí: van al almacén de secretos del
-sistema (ver ``vault.py``) — DPAPI en Windows, el llavero del escritorio en
-Linux. Si no hay ninguno de los dos, NUNCA caemos a texto plano: sencillamente
-no se recuerda nada.
+Neither the password nor the ticket is stored here: they go to the system secret
+store (see ``vault.py``) - DPAPI on Windows, the desktop keyring on Linux. If
+neither exists we NEVER fall back to plaintext: nothing is simply remembered.
 
-Cada cuenta guarda su ticket y su contraseña bajo claves separadas, nombradas
-con un hash del email (sólo como discriminador, jamás como comprobación de
-integridad o autenticación), para que varias cuentas de Glyph puedan estar
-activas a la vez.
+Each account keeps its ticket and its password under separate keys, named with a
+hash of the email (purely as a discriminator, never as an integrity or
+authentication check), so several Glyph accounts can be active at once.
 """
 
 from __future__ import annotations
@@ -41,12 +39,12 @@ import uuid
 from pathlib import Path
 
 from . import vault as vault_mod
-from .paths import app_data_dir, prefs_path
+from .paths import app_data_dir, note, prefs_path
 
-# Entropía específica de la app para el cifrado DPAPI de las credenciales. Sólo
-# la usa el almacén de Windows; es un identificador fijo y no un nombre a la
-# vista, así que no sigue a la aplicación cuando ésta se renombra: cambiarlo
-# dejaría ilegibles las contraseñas ya guardadas.
+# App-specific entropy for the DPAPI encryption of credentials. Only the
+# Windows store uses it; it is a fixed identifier and not a user-visible name,
+# so it does not follow the application when that is renamed: changing it would
+# render already-saved passwords unreadable.
 _CRED_ENTROPY = b"TroveLauncher.credentials.v1"
 
 _LOCK = threading.RLock()
@@ -54,7 +52,7 @@ _LOCK = threading.RLock()
 REGIONS = ("NA", "EU", "PTS")
 DEFAULT_REGION = "EU"
 
-# Paleta para los puntos de grupo y los avatares de cuenta.
+# Palette for the group dots and the account avatars.
 PALETTE = [
     "#8b5cf6", "#22c55e", "#38bdf8", "#f43f5e", "#f59e0b",
     "#14b8a6", "#ec4899", "#6366f1", "#84cc16", "#fb7185",
@@ -66,25 +64,25 @@ DEFAULTS = {
     "accounts": [],
     "remember_password": True,
     "update_first": True,
-    "game_path": "",          # instalación de Live
-    "pts_game_path": "",      # instalación de PTS (se autodetecta si está vacía)
+    "game_path": "",          # the Live installation
+    "pts_game_path": "",      # the PTS installation (auto-detected when empty)
     "custom_dirs": [],
     "reparent_glyph": False,
     "hide_emails": True,
-    # Sólo se usan fuera de Windows: con qué Wine se lanza y en qué prefijo.
-    # Vacíos = se deducen (ver core/winehost.py).
+    # Only used off Windows: which Wine launches the game and in which prefix.
+    # Empty = worked out automatically (see core/winehost.py).
     "wine_binary": "",
     "wine_prefix": "",
-    # Apariencia: acento, acentos propios guardados, partículas del fondo,
-    # familia tipográfica ("system" | "quicksand" | "comfortaa") y tema de club
-    # ("" | "mystic-cave" | "arsyn" | "sayro"), que fija el acento mientras
-    # esté puesto.
+    # Appearance: accent, the user's saved accents, background particles, font
+    # family ("system" | "quicksand" | "comfortaa" | "quantico") and club theme
+    # ("" | "mystic-cave" | "arsyn" | "sayro"), which pins the accent while it
+    # is on.
     "theme": {"accent": "#22c55e", "customs": [], "stars": True,
               "font": "system", "club": ""},
 }
 
 
-# --- lectura/escritura del fichero -----------------------------------------
+# --- reading and writing the file -----------------------------------------
 
 
 def _read_json(path: Path) -> dict | None:
@@ -96,12 +94,12 @@ def _read_json(path: Path) -> dict | None:
 
 
 def load() -> dict:
-    """Preferencias del disco, con la copia de seguridad como red.
+    """Preferences from disk, with the backup as a safety net.
 
-    Si el fichero principal no se puede leer (truncado por un corte de luz, por
-    ejemplo) se intenta el ``.bak`` ANTES de rendirse. Sin esto, un JSON roto
-    daría una configuración vacía y el primer guardado posterior borraría cuentas
-    y grupos para siempre.
+    If the main file cannot be read (truncated by a power cut, say) the ``.bak``
+    is tried BEFORE giving up. Without this, broken JSON would give an empty
+    configuration and the first save afterwards would wipe accounts and groups
+    for good.
     """
     path = prefs_path()
     data = dict(DEFAULTS)
@@ -111,18 +109,18 @@ def load() -> dict:
         backup = path.with_suffix(".json.bak")
         raw = _read_json(backup)
         if raw is not None:
-            print(f"[prefs] {path.name} ilegible; recuperado desde {backup.name}")
+            note(f"[prefs] {path.name} unreadable; recovered from {backup.name}")
 
     if raw is not None:
         data.update(raw)
-    # Resto de la disposición en tabla, que ya no existe: se descarta al cargar
-    # y el primer guardado la borra del fichero.
+    # Leftover from the table layout, which no longer exists: dropped on load,
+    # and the first save removes it from the file.
     data.pop("layout", None)
     return _migrate(data)
 
 
 def save(**changes) -> dict:
-    """Fusiona ``changes`` (ignorando los None) y persiste."""
+    """Merges ``changes`` (ignoring None values) and persists."""
     with _LOCK:
         data = load()
         data.update({k: v for k, v in changes.items() if v is not None})
@@ -131,13 +129,13 @@ def save(**changes) -> dict:
 
 
 def _write(data: dict) -> None:
-    """Guarda de forma atómica: temporal -> fsync -> reemplazo.
+    """Saves atomically: temporary file -> fsync -> replace.
 
-    Escribir directamente sobre prefs.json lo trunca antes de rellenarlo, así que
-    un corte de luz en ese instante deja el fichero vacío y se pierden todas las
-    cuentas. ``os.replace`` es atómico, de modo que el fichero real pasa del
-    contenido viejo al nuevo sin estado intermedio. Antes de sustituirlo se
-    guarda una copia ``.bak`` que ``load()`` sabe usar.
+    Writing straight over prefs.json truncates it before refilling it, so a
+    power cut at that instant leaves the file empty and every account is lost.
+    ``os.replace`` is atomic, so the real file goes from the old contents to the
+    new with no state in between. Before replacing it, a ``.bak`` copy is kept
+    that ``load()`` knows how to use.
     """
     path = prefs_path()
     tmp = path.with_suffix(".json.tmp")
@@ -146,12 +144,12 @@ def _write(data: dict) -> None:
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(payload)
             fh.flush()
-            os.fsync(fh.fileno())   # que los bytes estén en disco, no en caché
+            os.fsync(fh.fileno())   # get the bytes onto the disk, not into a cache
         if path.exists():
             try:
                 shutil.copy2(path, path.with_suffix(".json.bak"))
             except OSError:
-                pass  # sin copia de seguridad, pero el guardado sigue siendo atómico
+                pass  # no backup, but the save is still atomic
         os.replace(tmp, path)
     except OSError:
         try:
@@ -160,19 +158,19 @@ def _write(data: dict) -> None:
             pass
 
 
-# --- migración desde el formato antiguo ------------------------------------
+# --- migration from the old format ------------------------------------
 
 
 def _migrate(data: dict) -> dict:
-    """Convierte el formato v1 (cuentas como lista de emails + dict de alias) al
-    modelo de objetos. Se ejecuta en cada carga; en cuanto los datos ya están en
-    v2 no toca nada."""
+    """Converts the v1 format (accounts as a list of emails plus an alias dict)
+    to the object model. It runs on every load; once the data is already v2 it
+    touches nothing."""
     accounts = data.get("accounts") or []
     if data.get("schema", 1) >= 2 and all(isinstance(a, dict) for a in accounts):
         return data
 
     aliases = data.get("aliases", {}) or {}
-    # La región global de v1 pasa a ser la región inicial de cada cuenta.
+    # The single global region of v1 becomes each account's starting region.
     legacy_region = {"live-na": "NA", "live-eu": "EU", "pts": "PTS"}.get(
         data.get("server", ""), DEFAULT_REGION)
 
@@ -200,26 +198,26 @@ def _migrate(data: dict) -> dict:
     return data
 
 
-# --- utilidades -------------------------------------------------------------
+# --- helpers -------------------------------------------------------------
 
 
 def color_for(email: str) -> str:
-    """Color estable derivado del email, para que una cuenta nueva ya nazca con
-    un avatar distinguible sin que el usuario elija nada."""
+    """A stable colour derived from the email, so a new account is born with a
+    distinguishable avatar without the user picking anything."""
     digest = hashlib.sha256((email or "").strip().lower().encode("utf-8"),
                             usedforsecurity=False).digest()
     return PALETTE[digest[0] % len(PALETTE)]
 
 
 def _email_hash(email: str) -> str:
-    # Sólo discrimina nombres de fichero; nunca es una comprobación de seguridad.
+    # Only discriminates filenames; never a security check.
     return hashlib.sha256(
         (email or "").strip().lower().encode("utf-8"), usedforsecurity=False
     ).hexdigest()[:12]
 
 
 def mask_email(email: str) -> str:
-    """Ofusca un email dejando la inicial: ``a**********@dominio``."""
+    """Obscures an email but keeps the initial: ``a**********@domain``."""
     email = (email or "").strip()
     if "@" not in email:
         return "****" if email else ""
@@ -229,41 +227,41 @@ def mask_email(email: str) -> str:
 
 
 def display_name(email: str) -> str:
-    """Lo que mostramos de una cuenta: su nombre si lo tiene, si no el email
-    enmascarado. Nunca la dirección completa."""
+    """What we show for an account: its name if it has one, otherwise the
+    masked email. Never the full address."""
     account = get_account(email)
     if account and account.get("name"):
         return account["name"]
     return mask_email(email)
 
 
-# --- rutas por cuenta -------------------------------------------------------
+# --- per-account keys -------------------------------------------------------
 
 
 def auth_key(email: str = "") -> str:
-    """Clave del ticket en el almacén de secretos.
+    """The ticket's key in the secret store.
 
-    En Windows es además el nombre del fichero que ya existía
-    (``auth-<hash>.bin``), para que actualizar no pierda la sesión de nadie.
+    On Windows it doubles as the filename that already existed
+    (``auth-<hash>.bin``), so upgrading loses nobody's session.
     """
     return f"auth-{_email_hash(email)}" if email else "auth_cache"
 
 
 def cred_key(email: str = "") -> str:
-    """Clave de la contraseña en el almacén de secretos."""
+    """The password's key in the secret store."""
     return f"cred-{_email_hash(email)}" if email else "credentials"
 
 
 def update_db_path(branch: str, game_dir: Path) -> Path:
-    """Estado 'qué hay en disco' por (rama, carpeta): dos instalaciones pueden
-    estar en versiones distintas, así que no pueden compartir base de datos."""
+    """The "what is on disk" state per (branch, folder): two installations can
+    be on different versions, so they cannot share a database."""
     key = hashlib.sha256(
         str(Path(game_dir).resolve()).lower().encode("utf-8"), usedforsecurity=False
     ).hexdigest()[:12]
     return app_data_dir() / f"update-{branch}-{key}.sqlite"
 
 
-# --- cuentas ----------------------------------------------------------------
+# --- accounts ----------------------------------------------------------------
 
 
 def accounts() -> list[dict]:
@@ -279,10 +277,10 @@ def get_account(email: str) -> dict | None:
 
 
 def upsert_account(email: str, **fields) -> dict | None:
-    """Crea la cuenta si no existe y aplica los campos indicados.
+    """Creates the account if it does not exist and applies the given fields.
 
-    Sólo se aceptan las claves del modelo: así una llamada desde la interfaz no
-    puede colar campos arbitrarios en el fichero de preferencias.
+    Only the model's keys are accepted, so a call from the interface cannot slip
+    arbitrary fields into the preferences file.
     """
     email = (email or "").strip()
     if not email:
@@ -312,7 +310,7 @@ def upsert_account(email: str, **fields) -> dict | None:
                 "group": changes.get("group"),
                 "region": changes.get("region", DEFAULT_REGION),
                 "auto_relog": bool(changes.get("auto_relog", False)),
-                # Marca manual (p. ej. cuenta baneada): sólo afecta a cómo se pinta.
+                # Manual mark (a banned account, say): affects painting only.
                 "flagged": bool(changes.get("flagged", False)),
             }
             items.append(account)
@@ -323,7 +321,7 @@ def upsert_account(email: str, **fields) -> dict | None:
 
 
 def remove_account(email: str) -> None:
-    """Olvida la cuenta por completo: entrada, ticket cacheado y contraseña."""
+    """Forgets the account entirely: entry, cached ticket and password."""
     email = (email or "").strip()
     clear_credentials(email)
     try:
@@ -338,7 +336,7 @@ def remove_account(email: str) -> None:
         _write(data)
 
 
-# --- grupos -----------------------------------------------------------------
+# --- groups -----------------------------------------------------------------
 
 
 def groups() -> list[dict]:
@@ -351,7 +349,7 @@ def create_group(name: str = "", color: str = "") -> dict:
         items = [g for g in data.get("groups", []) if isinstance(g, dict)]
         group = {
             "id": uuid.uuid4().hex[:8],
-            "name": (name or "").strip() or f"Grupo {len(items) + 1}",
+            "name": (name or "").strip() or f"Group {len(items) + 1}",
             "color": color or PALETTE[len(items) % len(PALETTE)],
             "collapsed": False,
         }
@@ -375,7 +373,7 @@ def update_group(group_id: str, **fields) -> dict | None:
 
 
 def delete_group(group_id: str) -> None:
-    """Borra el grupo; sus cuentas pasan a «sin grupo», nunca se pierden."""
+    """Deletes the group; its accounts move to "Ungrouped", never lost."""
     with _LOCK:
         data = load()
         data["groups"] = [g for g in data.get("groups", [])
@@ -386,12 +384,12 @@ def delete_group(group_id: str) -> None:
         _write(data)
 
 
-# --- reordenación (arrastrar y soltar) --------------------------------------
+# --- reordering (drag and drop) --------------------------------------
 
 
 def reorder_groups(order: list) -> None:
-    """Reescribe el orden de los grupos. Los ids que no aparezcan en ``order`` se
-    conservan al final, para que un envío incompleto nunca borre un grupo."""
+    """Rewrites the group order. Ids missing from ``order`` are kept at the end,
+    so an incomplete submission can never delete a group."""
     with _LOCK:
         data = load()
         items = [g for g in data.get("groups", []) if isinstance(g, dict)]
@@ -403,12 +401,11 @@ def reorder_groups(order: list) -> None:
 
 
 def reorder_accounts(order: list) -> None:
-    """Aplica el nuevo orden y la nueva pertenencia a grupo de las cuentas.
+    """Applies the accounts' new order and new group membership.
 
-    ``order`` es una lista de ``{"email": ..., "group": ... | None}`` en el orden
-    final deseado. Igual que en los grupos, cualquier cuenta ausente se conserva
-    al final: la interfaz no puede provocar una pérdida de datos por enviar una
-    lista parcial.
+    ``order`` is a list of ``{"email": ..., "group": ... | None}`` in the wanted
+    final order. As with groups, any absent account is kept at the end: the
+    interface cannot cause data loss by sending a partial list.
     """
     with _LOCK:
         data = load()
@@ -430,14 +427,14 @@ def reorder_accounts(order: list) -> None:
         _write(data)
 
 
-# --- credenciales recordadas (DPAPI) ---------------------------------------
+# --- remembered credentials ---------------------------------------
 
 
 def save_credentials(email: str, password: str) -> bool:
-    """Guarda la contraseña en el almacén del sistema. False = no se guardó.
+    """Stores the password in the system store. False = it was not stored.
 
-    Sin almacén no hay guardado: preferimos que el usuario tenga que reescribir
-    la contraseña a dejarla legible en el disco.
+    No store means no storing: we would rather the user had to retype the
+    password than leave it readable on disk.
     """
     if not password:
         return False

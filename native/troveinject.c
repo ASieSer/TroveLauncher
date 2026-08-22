@@ -1,42 +1,43 @@
 /*
- * troveinject.exe — el brazo Windows de Trove Accounts Hub.
+ * troveinject.exe - the Windows arm of Trove Accounts Hub.
  *
- * En Windows la aplicación entrega el ticket ella misma (ver core/inject.py).
- * En Linux no puede: el juego recoge el ticket de un file-mapping de Windows
- * haciendo OpenProcess(pid del lanzador) + DuplicateHandle, y esos son objetos
- * del kernel de Windows que un proceso Linux nativo no puede ni crear ni
- * compartir. Este programa es ese lanzador, corriendo dentro del prefijo de
- * Wine, junto al juego.
+ * On Windows the application hands over the ticket itself (see
+ * core/inject.py). On Linux it cannot: the game collects the ticket from a
+ * Windows file mapping by doing OpenProcess(launcher pid) + DuplicateHandle,
+ * and those are Windows kernel objects a native Linux process can neither
+ * create nor share. This program is that launcher, running inside the Wine
+ * prefix alongside the game.
  *
- * Hace exactamente lo que hace inject.py, y por las mismas razones:
+ * It does exactly what inject.py does, and for the same reasons:
  *
- *   1. arma el blob "RIFT" cifrado con RC4 a partir del ticket,
- *   2. lo deja en un file-mapping heredable respaldado por el fichero de
- *      paginación, con un evento auto-reset al lado,
- *   3. lanza el juego —o el loader del anti-cheat, si está— pasándole los dos
- *      handles y SU PROPIO pid en -k "<map>:<evt>:<pid>",
- *   4. espera en el evento, que el juego señala al leer y descifrar el ticket,
- *   5. y NO cierra los handles: el juego los duplica desde nosotros durante
- *      toda la partida.
+ *   1. builds the RC4-encrypted "RIFT" blob from the ticket,
+ *   2. leaves it in an inheritable, pagefile-backed file mapping, with an
+ *      auto-reset event beside it,
+ *   3. launches the game - or the anti-cheat loader, if present - passing it
+ *      both handles and ITS OWN pid in -k "<map>:<evt>:<pid>",
+ *   4. waits on the event, which the game signals once it has read and
+ *      decrypted the ticket,
+ *   5. and does NOT close the handles: the game duplicates them from us for
+ *      the whole session.
  *
- * Por ese punto 5 esto es un servidor y no una orden suelta: mientras haya una
- * partida abierta, este proceso tiene que seguir vivo. Lo arranca el lado
- * Linux (core/winehost.py) y le habla por stdin/stdout con líneas de texto:
+ * Because of point 5 this is a server and not a one-shot command: while a
+ * session is open, this process has to stay alive. The Linux side starts it
+ * (core/winehost.py) and talks to it over stdin/stdout in lines of text:
  *
- *   -> <id> spawn <exe64> <ticket64> <auth64> <parent64> <wait_ms> [pid,pid…]
+ *   -> <id> spawn <exe64> <ticket64> <auth64> <parent64> <wait_ms> [pid,pid...]
  *   <- <id> ok <pid> <consumed 0|1> <via_loader 0|1>
- *   -> <id> wait <pid>            <- <id> ok <código de salida>   (cuando salga)
+ *   -> <id> wait <pid>            <- <id> ok <exit code>          (once it exits)
  *   -> <id> kill <pid>            <- <id> ok
- *   -> <id> list                  <- <id> ok <pid>,<ppid>,<nombre64> ...
- *   -> <id> ping                  <- <id> ok <pid del propio ayudante>
- *   <- log <texto64>              (en cualquier momento)
- *   <- <id> err <mensaje64>
+ *   -> <id> list                  <- <id> ok <pid>,<ppid>,<name64> ...
+ *   -> <id> ping                  <- <id> ok <the helper's own pid>
+ *   <- log <text64>               (at any time)
+ *   <- <id> err <message64>
  *
- * Los argumentos van en base64 porque el ticket es XML multilínea y las rutas
- * llevan espacios; el protocolo se queda en una línea por mensaje, que es lo
- * que hace trivial leerlo desde el otro lado.
+ * The arguments travel base64-encoded because the ticket is multi-line XML and
+ * the paths contain spaces; the protocol stays at one line per message, which
+ * is what makes it trivial to read from the other side.
  *
- * Se compila cruzado desde Linux, sin dependencias:
+ * Cross-compiled from Linux, with no dependencies:
  *   x86_64-w64-mingw32-gcc -O2 -municode -o troveinject.exe troveinject.c
  */
 
@@ -46,9 +47,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LINE_MAX_BYTES (1 << 20)   /* el ticket en base64 ronda las decenas de KB */
+#define LINE_MAX_BYTES (1 << 20)   /* the base64 ticket runs to tens of KB */
 
-static CRITICAL_SECTION g_out_lock;   /* stdout lo comparten el bucle y los hilos de wait */
+static CRITICAL_SECTION g_out_lock;   /* stdout is shared by the loop and the wait threads */
 
 /* --- salida ------------------------------------------------------------- */
 
@@ -87,7 +88,7 @@ static int b64_val(char c)
     return -1;
 }
 
-/* Devuelve bytes reservados con malloc y escribe la longitud en *out_len. */
+/* Returns malloc'd bytes and writes the length into *out_len. */
 static unsigned char *b64_decode(const char *in, size_t *out_len)
 {
     size_t len = strlen(in);
@@ -177,7 +178,7 @@ static char *wide_to_utf8(const wchar_t *w)
     return s;
 }
 
-/* --- el blob RIFT (idéntico a inject.build_rift_buffer) ------------------ */
+/* --- the RIFT blob (identical to rift.build_rift_buffer) ----------------- */
 
 static void rc4(const unsigned char *key, size_t klen,
                 unsigned char *data, size_t dlen)
@@ -200,8 +201,8 @@ static void rc4(const unsigned char *key, size_t klen,
 /*
  * rcKey(8) ++ len(uint32 LE) ++ RC4("RIFT" ++ ticket ++ \0)
  *
- * El ticket se recorta igual que en Python: desde la primera línea que empiece
- * por "Signature:" o "<?xml", sin los \r y sin espacios al final.
+ * The ticket is trimmed exactly as in Python: from the first line starting
+ * with "Signature:" or "<?xml", with the \r stripped and no trailing spaces.
  */
 static unsigned char *build_rift(const char *ticket, size_t *out_len)
 {
@@ -218,7 +219,7 @@ static unsigned char *build_rift(const char *ticket, size_t *out_len)
     if (sig && xml) start = sig < xml ? sig : xml;
     else if (sig)   start = sig;
     else if (xml)   start = xml;
-    /* Sólo cuenta si abre línea, como el split('\n') del original. */
+    /* Only counts at the start of a line, like the original's split('\n'). */
     if (start != clean && start[-1] != '\n') start = clean;
 
     size_t slen = strlen(start);
@@ -228,7 +229,7 @@ static unsigned char *build_rift(const char *ticket, size_t *out_len)
     size_t body = 4 + slen + 1;                 /* "RIFT" + ticket + NUL */
     unsigned char *ct = (unsigned char *)malloc(body);
     if (!ct) { free(clean); return NULL; }
-    memcpy(ct, "\x54\x46\x49\x52", 4);          /* 'TFIR' == "RIFT" leído LE */
+    memcpy(ct, "\x54\x46\x49\x52", 4);          /* 'TFIR' == "RIFT" read little-endian */
     memcpy(ct + 4, start, slen);
     ct[4 + slen] = '\0';
     free(clean);
@@ -240,7 +241,7 @@ static unsigned char *build_rift(const char *ticket, size_t *out_len)
         CryptGenRandom(prov, sizeof key, key);
         CryptReleaseContext(prov, 0);
     } else {
-        /* Sin proveedor, algo impredecible dentro de esta sesión. */
+        /* No provider available: something unpredictable within this session. */
         LARGE_INTEGER qpc; QueryPerformanceCounter(&qpc);
         unsigned long long seed = (unsigned long long)qpc.QuadPart
                                 ^ ((unsigned long long)GetCurrentProcessId() << 32);
@@ -279,9 +280,9 @@ static DWORD find_pid_by_name(const wchar_t *name)
     return found;
 }
 
-/* Pids que NO pueden ser la partida que acabamos de lanzar: los que ya estaban
-   corriendo antes, más los que la aplicación ya está vigilando. Sin esto, dos
-   cuentas que arrancan a la vez pueden adjudicarse la partida de la otra. */
+/* Pids that CANNOT be the session we have just launched: those already
+   running before, plus those the application is already watching. Without
+   this, two accounts starting at once can claim each other's session. */
 struct pidset { DWORD *v; size_t n, cap; };
 
 static void pidset_add(struct pidset *set, DWORD pid)
@@ -301,7 +302,7 @@ static int pidset_has(const struct pidset *set, DWORD pid)
     return 0;
 }
 
-/* Añade a `set` los pids que ya corren con ese nombre de ejecutable. */
+/* Adds to `set` the pids already running under that executable name. */
 static void pidset_add_running(struct pidset *set, const wchar_t *exe_name)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -316,13 +317,14 @@ static void pidset_add_running(struct pidset *set, const wchar_t *exe_name)
 }
 
 /*
- * Traduce el pid de CreateProcess al pid REAL del juego.
+ * Translates the pid from CreateProcess into the game's REAL pid.
  *
- * Con el anti-cheat no lanzamos el juego sino el loader, que arranca Trove y
- * termina: vigilar el pid del loader haría creer que la partida se cerró a los
- * pocos segundos. Se busca primero el hijo directo del loader; si el loader ya
- * murió y se perdió el parentesco, vale cualquier proceso del juego que no
- * estuviera antes. Mismo criterio que inject.resolve_game_pid.
+ * With the anti-cheat we do not launch the game but the loader, which starts
+ * Trove and exits: watching the loader's pid would make it look as though the
+ * session closed after a few seconds. The loader's direct child is looked for
+ * first; if the loader has already died and the parent link is lost, any game
+ * process that was not there before will do. Same rule as
+ * inject.resolve_game_pid.
  */
 static DWORD resolve_game_pid(DWORD spawn_pid, const wchar_t *exe_name,
                               DWORD timeout_ms, const struct pidset *exclude)
@@ -343,28 +345,28 @@ static DWORD resolve_game_pid(DWORD spawn_pid, const wchar_t *exe_name,
                 } while (Process32NextW(snap, &e));
             }
             CloseHandle(snap);
-            if (self) return self;         /* instalación sin loader */
+            if (self) return self;         /* an installation with no loader */
             if (child) return child;
             if (any) return any;
         }
         Sleep(400);
     } while ((long)(deadline - GetTickCount()) > 0);
-    return spawn_pid;   /* algo hay que vigilar */
+    return spawn_pid;   /* something has to be watched */
 }
 
 /* --- lanzar -------------------------------------------------------------- */
 
 /*
- * Los handles del mapping y del evento NO se cierran nunca: el juego los
- * duplica desde este proceso mientras dure la partida. Es la misma fuga
- * deliberada de dos handles por lanzamiento que hace Glyph, y la razón de que
- * este ayudante siga vivo hasta que la aplicación se cierre.
+ * The mapping's and the event's handles are NEVER closed: the game duplicates
+ * them from this process for as long as the session lasts. It is the same
+ * deliberate leak of two handles per launch that Glyph makes, and the reason
+ * this helper stays alive until the application closes.
  */
 static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
                       const char *auth, const wchar_t *parent, DWORD wait_ms,
                       const char *exclude_csv)
 {
-    /* ¿Está el loader del anti-cheat junto al ejecutable? */
+    /* Is the anti-cheat loader sitting next to the executable? */
     wchar_t dir[MAX_PATH * 2];
     wcsncpy(dir, exe, MAX_PATH * 2 - 1); dir[MAX_PATH * 2 - 1] = L'\0';
     wchar_t *slash = wcsrchr(dir, L'\\');
@@ -375,7 +377,8 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     BOOL via_loader = GetFileAttributesW(loader) != INVALID_FILE_ATTRIBUTES;
     const wchar_t *exe_to_run = via_loader ? loader : exe;
 
-    /* Foto previa: lo que ya corría no puede ser la partida que vamos a abrir. */
+    /* Snapshot first: what was already running cannot be the session we are
+       about to open. */
     struct pidset exclude = {NULL, 0, 0};
     for (const char *p = exclude_csv; p && *p; ) {
         pidset_add(&exclude, (DWORD)strtoul(p, NULL, 10));
@@ -402,9 +405,9 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     HANDLE hevent = CreateEventW(&sa, FALSE, FALSE, NULL);
     if (!hevent) { CloseHandle(hmap); free(exclude.v); emit_winerr(id, "CreateEvent failed"); return; }
 
-    /* Reparent: el loader como hijo de Glyph, para que la cadena de lanzamiento
-       sea la de una partida legítima (ver PROC_THREAD_ATTRIBUTE_PARENT_PROCESS
-       en inject.py). Si no está Glyph, se lanza igual sin reparent. */
+    /* Reparent: the loader as a child of Glyph, so the launch chain is
+       that of a legitimate session (see PROC_THREAD_ATTRIBUTE_PARENT_PROCESS
+       in inject.py). With no Glyph around it launches anyway, unparented. */
     HANDLE parent_handle = NULL;
     if (parent && parent[0]) {
         DWORD ppid = find_pid_by_name(parent);
@@ -430,8 +433,9 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
         emit_winerr(id, "InitializeProcThreadAttributeList failed");
         return;
     }
-    /* O la lista blanca de handles O el padre, nunca las dos: con un padre
-       declarado, los handles tendrían que ser SUYOS y Windows responde 87. */
+    /* Either the handle allow-list OR the parent, never both: with a
+       declared parent the handles would have to be ITS OWN and Windows
+       answers 87. */
     HANDLE handles[2] = {hmap, hevent};
     BOOL attr_ok = parent_handle
         ? UpdateProcThreadAttribute(attr, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS,
@@ -453,8 +457,8 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     wchar_t *auth_w = utf8_to_wide((const unsigned char *)auth, strlen(auth));
     wchar_t cmd[8192];
     if (via_loader)
-        /* argv[0] = ruta del loader, argv[1] = nombre del juego; al revés el
-           loader aborta con 1038 sin llegar a arrancar nada. */
+        /* argv[0] = the loader's path, argv[1] = the game's name; the other
+           way round the loader aborts with 1038 without starting anything. */
         swprintf(cmd, 8192, L"\"%ls\" %ls -k %08llx:%08llx:%lu -C \"%ls\" -lang en",
                  exe_to_run, game_name, (unsigned long long)(ULONG_PTR)hmap,
                  (unsigned long long)(ULONG_PTR)hevent,
@@ -474,8 +478,9 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     emit_log(via_loader ? "[inject] launching through the anti-cheat loader"
                         : "[inject] launching the game directly");
 
-    /* Heredar handles sólo en la ruta sin reparent, que es la que se apoya en
-       la lista blanca; con padre declarado el ticket va por DuplicateHandle. */
+    /* Inherit handles only on the unparented path, which is the one that
+       leans on the allow-list; with a declared parent the ticket travels by
+       DuplicateHandle. */
     BOOL ok = CreateProcessW(exe_to_run, cmd, NULL, NULL,
                              parent_handle ? FALSE : TRUE,
                              EXTENDED_STARTUPINFO_PRESENT, NULL, workdir,
@@ -504,10 +509,10 @@ static void cmd_spawn(long id, const wchar_t *exe, const char *ticket,
     free(exclude.v);
     emit("%ld ok %lu %d %d", id, (unsigned long)pid, consumed ? 1 : 0,
          via_loader ? 1 : 0);
-    /* hmap y hevent se quedan abiertos a propósito hasta que muera el ayudante. */
+    /* hmap and hevent stay open on purpose until the helper dies. */
 }
 
-/* --- esperar la salida, sin bloquear el bucle de órdenes ----------------- */
+/* --- waiting for the exit, without blocking the command loop ------------ */
 
 struct wait_job { long id; DWORD pid; DWORD ms; };
 
@@ -517,7 +522,8 @@ static DWORD WINAPI wait_thread(LPVOID arg)
     HANDLE h = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
                            FALSE, job->pid);
     if (!h) {
-        /* Ya no existe: para el que espera, eso es "salió y no sabemos con qué". */
+        /* Gone already: to whoever is waiting, that reads as "it exited and we do
+       not know with what". */
         emit("%ld ok -1", job->id);
         free(job);
         return 0;
@@ -531,12 +537,12 @@ static DWORD WINAPI wait_thread(LPVOID arg)
     return 0;
 }
 
-/* --- «¿ya ha arrancado del todo?» ---------------------------------------
+/* --- "is it fully up yet?" ----------------------------------------------
  *
- * WaitForInputIdle vuelve cuando el proceso ha terminado de inicializarse y
- * está esperando entrada. No enumera ni toca ventana ninguna: sólo espera. Es
- * lo que separa «el proceso existe» de «el juego está en pie», y hace falta
- * para no lanzar la siguiente cuenta encima de la anterior.
+ * WaitForInputIdle returns once the process has finished initialising and is
+ * waiting for input. It enumerates and touches no window at all: it only
+ * waits. It is what separates "the process exists" from "the game is up", and
+ * it is needed so the next account is not launched on top of the previous one.
  */
 static DWORD WINAPI ready_thread(LPVOID arg)
 {
@@ -558,8 +564,8 @@ static void cmd_list(long id)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) { emit_winerr(id, "Toolhelp failed"); return; }
-    /* Se arma la línea entera antes de escribirla: un hilo de wait podría
-       colarse en medio y partir la respuesta. */
+    /* The whole line is assembled before being written: a wait thread could
+       slip in halfway and split the reply. */
     size_t cap = 1 << 16, len = 0;
     char *buf = (char *)malloc(cap);
     if (!buf) { CloseHandle(snap); emit_err(id, "out of memory"); return; }
@@ -590,7 +596,7 @@ static void cmd_list(long id)
     free(buf);
 }
 
-/* --- bucle de órdenes ---------------------------------------------------- */
+/* --- command loop -------------------------------------------------------- */
 
 static char *next_token(char **cursor)
 {
@@ -608,7 +614,7 @@ static char *decode_arg(const char *token)
 {
     size_t len = 0;
     unsigned char *raw = b64_decode(token ? token : "", &len);
-    return (char *)raw;   /* siempre termina en NUL */
+    return (char *)raw;   /* always NUL-terminated */
 }
 
 int main(void)
@@ -664,8 +670,8 @@ int main(void)
             job->id = id;
             job->pid = pid_tok ? (DWORD)strtoul(pid_tok, NULL, 10) : 0;
             job->ms = ms_tok ? (DWORD)strtoul(ms_tok, NULL, 10) : 120000;
-            /* Las dos esperas van en su propio hilo: el bucle de órdenes tiene
-               que seguir atendiendo mientras una partida arranca o dura. */
+            /* Both waits go on their own thread: the command loop has to keep
+               serving while a session starts or runs. */
             LPTHREAD_START_ROUTINE fn = (strcmp(cmd, "wait") == 0)
                                         ? wait_thread : ready_thread;
             HANDLE th = CreateThread(NULL, 0, fn, job, 0, NULL);

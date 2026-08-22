@@ -1,22 +1,22 @@
-"""Lanzar y vigilar el juego, aquí o dentro de Wine.
+"""Launching and watching the game, here or inside Wine.
 
-El resto de la aplicación no debería saber en qué sistema corre. Este módulo
-ofrece las cuatro cosas que hacen falta para una partida —lanzarla, saber
-cuándo termina, cerrarla y mirar qué procesos hay— y por debajo hay dos
-implementaciones:
+The rest of the application should not need to know which system it runs on.
+This module offers the four things a game session needs - start it, know when it
+ends, close it and look at what processes exist - and underneath there are two
+implementations:
 
 ``NativeHost``
-    Windows. Llama a ``inject.py`` directamente: la aplicación ES el lanzador
-    que el juego consulta para recoger el ticket.
+    Windows. Calls ``inject.py`` directly: the application IS the launcher the
+    game asks for its ticket.
 
 ``WineHost``
-    Linux. El lanzador no puede ser un proceso Linux (ver ``winehost.py``), así
-    que hace de intermediario con el ayudante que corre dentro del prefijo.
+    Linux. The launcher cannot be a Linux process (see ``winehost.py``), so this
+    acts as a go-between with the helper running inside the prefix.
 
-Las dos hablan de "pid" y las dos devuelven lo mismo. La diferencia es de quién
-es ese pid: en Windows es un pid del sistema; en Linux, uno de Wine. Como todas
-las operaciones sobre él pasan por el mismo anfitrión que lo dio, esa diferencia
-no se escapa de aquí.
+Both speak in "pids" and both return the same shapes. The difference is whose
+pid it is: on Windows it is a system pid, on Linux a Wine one. Since every
+operation on it goes through the same host that handed it out, that difference
+never escapes this file.
 """
 
 from __future__ import annotations
@@ -30,25 +30,25 @@ from . import prefs
 
 
 class HostUnavailable(RuntimeError):
-    """No se puede lanzar en este equipo, con una razón que enseñar."""
+    """The game cannot be launched here, with a reason worth showing."""
 
 
 class GameHost:
     kind = "none"
 
     def check(self) -> None:
-        """Lanza ``HostUnavailable`` si hoy no se puede jugar."""
+        """Raises ``HostUnavailable`` if playing is not possible right now."""
         raise HostUnavailable("this system cannot launch Trove")
 
     def spawn(self, exe: Path, ticket: str, auth_server: str, *,
               parent_process_name: str = "", exclude: set[int] | None = None,
               log=print) -> int:
-        """Lanza y devuelve el pid del JUEGO, no el de lo que se ejecutó.
+        """Launches and returns the GAME's pid, not that of what was executed.
 
-        ``exclude`` son las partidas que la aplicación ya vigila: con el loader
-        del anti-cheat por medio hay que salir a buscar el proceso del juego, y
-        sin esta lista dos cuentas lanzadas a la vez pueden acabar apuntando a
-        la misma.
+        ``exclude`` are the sessions the application already watches: with the
+        anti-cheat loader in the way the game's process has to be hunted down,
+        and without this list two accounts launched at once can end up pointing
+        at the same one.
         """
         raise HostUnavailable("this system cannot launch Trove")
 
@@ -58,30 +58,24 @@ class GameHost:
     def terminate(self, pid: int) -> bool:
         return False
 
-    def pids_by_name(self, name: str) -> set[int]:
-        return set()
-
     def list_processes(self) -> list[tuple[int, int, str]]:
-        """``(pid, pid del padre, nombre)`` de lo que corre en este anfitrión."""
+        """``(pid, parent pid, name)`` of what runs on this host."""
         return []
 
     def wait_until_ready(self, pid: int, timeout: float = 120.0, log=print) -> bool:
-        """Espera a que la partida termine de arrancar. False si se murió.
+        """Waits for the session to finish starting. False if it died.
 
-        Lanzar la siguiente cuenta mientras la anterior todavía se está
-        levantando es lo que hace que el loader del anti-cheat se caiga sin
-        lanzar nada, así que quien lanza espera aquí.
+        Launching the next account while the previous one is still coming up is
+        what makes the anti-cheat loader fall over without launching anything,
+        so the caller waits here.
         """
         return True
 
-    def close(self) -> None:
-        pass
-
     def status(self) -> dict:
-        """Para la interfaz: si se puede jugar y, si no, por qué.
+        """For the interface: whether playing is possible and, if not, why.
 
-        ``warning`` es para lo que se puede lanzar pero probablemente salga mal,
-        que no es lo mismo que no poder: ver ``WineHost.status``.
+        ``warning`` is for what can be launched but will probably go wrong, which
+        is not the same as being unable to: see ``WineHost.status``.
         """
         try:
             self.check()
@@ -104,18 +98,18 @@ class NativeHost(GameHost):
               log=print) -> int:
         from . import inject
 
-        # Lo que ya corría con ese nombre, más lo que ya vigilamos.
+        # What was already running under that name, plus what we already watch.
         before = inject.pids_by_name(exe.name) | set(exclude or ())
         result = inject.spawn(exe, ticket, auth_server,
                               parent_process_name=parent_process_name or None,
                               log=log)
 
-        # El loader del anti-cheat se muere a veces sin llegar a lanzar nada
-        # (código 1021, por ejemplo). Si además nadie ha recogido el ticket, este
-        # lanzamiento no ha dejado ninguna partida: buscar «un Trove nuevo» sólo
-        # serviría para adjudicarse el de otra cuenta y enseñarlo con el nombre
-        # cambiado. Antes de rendirse, eso sí, se mira: el juego pudo arrancar y
-        # tardar más de la cuenta en recoger el ticket.
+        # The anti-cheat loader sometimes dies without launching anything at
+        # all (exit code 1021, for one). If nobody picked up the ticket either,
+        # this launch left no session behind: hunting for "a new Trove" would
+        # only claim another account's and show it under the wrong name. Before
+        # giving up, though, we do look: the game may have started and simply
+        # taken longer than usual to collect the ticket.
         code = result.get("exit_code")
         if not result["consumed"] and code:
             fresh = [pid for pid, _ppid, name in inject.list_processes()
@@ -129,12 +123,12 @@ class NativeHost(GameHost):
         return inject.resolve_game_pid(result["pid"], exe.name, exclude=before, log=log)
 
     def wait_until_ready(self, pid: int, timeout: float = 120.0, log=print) -> bool:
-        """Espera a que el juego termine de arrancar. False si se quedó por el camino.
+        """Waits for the game to finish starting. False if it died on the way.
 
-        ``WaitForInputIdle`` es exactamente esta pregunta: vuelve cuando el
-        proceso ha acabado su inicialización y está esperando entrada. No mira,
-        mueve ni toca ninguna ventana —sólo espera— y es lo que separa «el
-        proceso existe» de «el juego ya está en pie».
+        ``WaitForInputIdle`` asks exactly this question: it returns once the
+        process has finished initialising and is waiting for input. It does not
+        look at, move or touch any window - it only waits - and it is what
+        separates "the process exists" from "the game is up".
         """
         import ctypes
         from ctypes import wintypes
@@ -206,27 +200,23 @@ class NativeHost(GameHost):
         finally:
             k.CloseHandle(handle)
 
-    def pids_by_name(self, name: str) -> set[int]:
-        from . import inject
-
-        return inject.pids_by_name(name)
-
     def list_processes(self) -> list[tuple[int, int, str]]:
         from . import inject
 
         return inject.list_processes()
 
 
-# --- Linux (a través de Wine) -----------------------------------------------
+# --- Linux (through Wine) -----------------------------------------------
 
 
 class WineHost(GameHost):
-    """Todo pasa por el ayudante; aquí sólo se decide con qué Wine y prefijo.
+    """Everything goes through the helper; here only the Wine and prefix are
+    decided.
 
-    El ayudante se arranca a la primera partida y se queda vivo: sus handles son
-    los que el juego duplica mientras juega. El prefijo se fija con el primer
-    lanzamiento, porque un prefijo distinto es, literalmente, otro disco C: y el
-    juego no estaría en él.
+    The helper starts with the first session and stays alive: its handles are the
+    ones the game duplicates while playing. The prefix is fixed by the first
+    launch, because a different prefix is, literally, a different C: drive and
+    the game would not be on it.
     """
 
     kind = "wine"
@@ -236,12 +226,12 @@ class WineHost(GameHost):
         self._helper = None
         self._lock = threading.Lock()
 
-    # -- configuración --
+    # -- configuration --
     def _settings(self, game_exe: Path | None = None) -> tuple[str, str]:
-        """(binario de wine, prefijo) para lanzar ese juego.
+        """(wine binary, prefix) to launch that game with.
 
-        El prefijo se resuelve PRIMERO porque es quien decide el runner: dentro
-        de un prefijo de Proton, el Wine que toca es el de ese Proton.
+        The prefix is resolved FIRST because it is what decides the runner:
+        inside a Proton prefix, the right Wine is that Proton's own.
         """
         from . import winehost
 
@@ -265,13 +255,12 @@ class WineHost(GameHost):
                 f"tools/build_helper.sh.")
 
     def status(self) -> dict:
-        """Lo de siempre, más con qué se va a lanzar y qué Proton hay a mano.
+        """The usual, plus what it will launch with and which Protons are around.
 
-        Aparte va ``warning``: el Wine elegido arranca, pero le falta el símbolo
-        que el loader del anti-cheat importa, así que el juego no llegaría a
-        abrirse. Es un aviso y no un impedimento —quien quiera intentarlo, que lo
-        intente— pero se dice ANTES, no después de un diálogo de error a medio
-        traducir.
+        Separately there is ``warning``: the chosen Wine does start, but it lacks
+        the symbol the anti-cheat loader imports, so the game would never open.
+        It is a warning and not a blocker - anyone who wants to try, may - but it
+        is said BEFORE, not after a half-translated error dialog.
         """
         from . import winehost
 
@@ -283,7 +272,7 @@ class WineHost(GameHost):
             info["warning"] = (
                 f"This Wine ({wine}) does not have {winehost.LOADER_SYMBOL}, which "
                 f"Trove's anti-cheat loader asks for: the loader shows a "
-                f"«procedure entry point» error and the game never starts. "
+                f"'procedure entry point' error and the game never starts. "
                 + ("Pick one of the Proton runners below — they ship it."
                    if runners else
                    "Install Proton from Steam (any recent version ships it) and "
@@ -301,11 +290,11 @@ class WineHost(GameHost):
             self.check()
             wine, prefix = self._settings(game_exe)
 
-            # Un intento y un reintento. Wine falla de vez en cuando al arrancar
-            # sobre un prefijo que se está inicializando o cuyo wineserver
-            # anterior aún se está apagando; a la segunda va. Si vuelve a fallar
-            # es que el problema es de verdad, y el error ya trae lo que dijo
-            # Wine (ver WineHelper._explain).
+            # One try and one retry. Wine occasionally fails to start against a
+            # prefix that is initialising or whose previous wineserver is still
+            # shutting down; the second attempt works. If it fails again the
+            # problem is real, and the error already carries what Wine said (see
+            # WineHelper._explain).
             last = None
             for attempt in (1, 2):
                 helper = winehost.WineHelper(wine=wine, prefix=prefix, log=self._log)
@@ -323,7 +312,7 @@ class WineHost(GameHost):
                 return helper
             raise HostUnavailable(str(last))
 
-    # -- operaciones --
+    # -- operations --
     def spawn(self, exe: Path, ticket: str, auth_server: str, *,
               parent_process_name: str = "", exclude: set[int] | None = None,
               log=print) -> int:
@@ -357,14 +346,6 @@ class WineHost(GameHost):
         except (WineError, HostUnavailable):
             return False
 
-    def pids_by_name(self, name: str) -> set[int]:
-        from .winehost import WineError
-
-        try:
-            return self._connect().pids_by_name(name)
-        except (WineError, HostUnavailable):
-            return set()
-
     def list_processes(self) -> list[tuple[int, int, str]]:
         from .winehost import WineError
 
@@ -390,21 +371,15 @@ class WineHost(GameHost):
                 f"carrying on")
         return any(p == int(pid) for p, _ppid, _name in self.list_processes())
 
-    def close(self) -> None:
-        with self._lock:
-            if self._helper is not None:
-                self._helper.stop()
-                self._helper = None
 
-
-# --- elección ---------------------------------------------------------------
+# --- picking one ---------------------------------------------------------------
 
 _host: GameHost | None = None
 _host_lock = threading.Lock()
 
 
 def host(log=print) -> GameHost:
-    """El anfitrión de este equipo. Uno solo, y para toda la sesión."""
+    """This machine's host. Just the one, for the whole session."""
     global _host
     with _host_lock:
         if _host is None:

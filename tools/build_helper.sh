@@ -1,9 +1,9 @@
 #!/bin/sh
-# Compila el ayudante Win32 que Trove Accounts Hub usa dentro del prefijo de
-# Wine para entregarle el ticket al juego (ver native/troveinject.c).
+# Builds the Win32 helper Trove Accounts Hub uses inside the Wine prefix to
+# hand the ticket to the game (see native/troveinject.c).
 #
-# Sólo hace falta para REGENERAR el binario; la aplicación trae uno ya
-# compilado en native/troveinject.exe.
+# Only needed to REGENERATE the binary; the application ships one already built
+# at native/troveinject.exe.
 #
 #   sudo apt install mingw-w64      # o el paquete equivalente
 #   tools/build_helper.sh

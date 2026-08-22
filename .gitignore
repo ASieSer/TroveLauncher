@@ -1,27 +1,33 @@
 # --- Python ---------------------------------------------------------------
-# El bytecode se regenera solo y depende de la versión de Python de cada uno:
-# versionarlo sólo produce conflictos en cada commit.
+# Bytecode regenerates itself and depends on each person's Python version:
+# versioning it only produces conflicts on every commit.
 __pycache__/
 *.py[cod]
 *.egg-info/
 
-# Entornos virtuales. En Linux se crean con --system-site-packages (ver README),
-# así que el de cada uno es distinto y ninguno debe viajar en el repositorio.
+# Virtual environments. On Linux they are created with --system-site-packages
+# (see the README), so everyone's differs and none belongs in the repository.
 .venv/
 venv/
 env/
 
-# --- Productos de construcción --------------------------------------------
-# De PyInstaller, si alguna vez se congela la aplicación.
+# --- Build products -------------------------------------------------------
+# PyInstaller's working folder and its output.
 /build/
 /dist/
+
+# Auto-generated specs are throwaway; ours is the build recipe and is versioned.
 *.spec
+!TroveAccountsHub.spec
 
-# OJO: native/troveinject.exe SÍ se versiona, aunque sea un binario. Quien juega
-# en Linux no tiene por qué tener un compilador cruzado; la fuente está al lado
-# y tools/build_helper.sh lo reproduce.
+# NOTE: native/troveinject.exe IS versioned, binary though it is. Nobody playing
+# on Linux should need a cross-compiler; the source sits beside it and
+# tools/build_helper.sh reproduces it.
 
-# --- Editores y sistema ---------------------------------------------------
+# The generated icon is versioned too, for the same reason: building the
+# executable should not require Pillow. tools/make_icon.py regenerates it.
+
+# --- Editors and OS -------------------------------------------------------
 .vscode/
 .idea/
 *.swp

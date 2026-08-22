@@ -1,20 +1,20 @@
-"""Encontrar las instalaciones de Trove del equipo.
+"""Finding the machine's Trove installations.
 
-Cuatro orígenes, en este orden:
+Four sources, in this order:
 
-  1. Registro de Windows -> ``Uninstall\\Glyph Trove*`` -> ``InstallLocation``.
+  1. The Windows registry -> ``Uninstall\\Glyph Trove*`` -> ``InstallLocation``.
   2. Steam -> ``libraryfolders.vdf`` -> ``steamapps/common/Trove/Games/Trove/*``.
-  3. Prefijos de Wine y de Proton (sólo en Linux): el juego es de Windows, así
-     que allí vive dentro de un prefijo, bajo ``drive_c``.
-  4. Carpetas que el usuario añade a mano (guardadas en prefs).
+  3. Wine and Proton prefixes (Linux only): the game is a Windows one, so there
+     it lives inside a prefix, under ``drive_c``.
+  4. Folders the user adds by hand (stored in prefs).
 
-Una carpeta sólo cuenta como instalación si contiene un ejecutable de Trove
-válido, lo que comprobamos leyendo la cabecera PE (ejecutable GUI de Windows) en
-lugar de fiarnos del nombre. La lógica de validación viene de BetterTroveTools
+A folder only counts as an installation if it contains a valid Trove
+executable, which we check by reading the PE header (a Windows GUI executable)
+rather than trusting the name. The validation logic comes from BetterTroveTools
 (MIT, (c) 2026-Present Aallyn Reed).
 
-El escaneo toca el registro y el disco, así que se cachea durante la vida del
-proceso; ``invalidate()`` lo descarta cuando el usuario cambia sus carpetas.
+The scan touches the registry and the disk, so it is cached for the life of the
+process; ``invalidate()`` discards it when the user changes their folders.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from pathlib import Path
 if os.name == "nt":
     import winreg
 
-# Sufijo que cuelga de cualquier raíz donde viva Glyph.
+# The suffix hanging off any root Glyph lives under.
 _GLYPH_SUFFIX = Path("Glyph") / "Games" / "Trove"
 
 _CACHE: list | None = None
@@ -38,28 +38,28 @@ _CACHE_LOCK = threading.Lock()
 
 
 def invalidate() -> None:
-    """Descarta el escaneo cacheado; el siguiente ``detect()`` vuelve a mirar."""
+    """Discards the cached scan; the next ``detect()`` looks again."""
     global _CACHE
     with _CACHE_LOCK:
         _CACHE = None
 
 
 def is_scanned() -> bool:
-    """¿Hay ya un escaneo hecho? Permite a la interfaz arrancar sin esperar.
+    """Has a scan been done yet? Lets the interface start without waiting.
 
-    En caliente el escaneo tarda unos milisegundos, pero con los discos dormidos
-    llega a tardar varios segundos (medido: 9,5 s despertando un disco mecánico),
-    y eso no puede bloquear la carga de la ventana.
+    Warm, the scan takes a few milliseconds, but with sleeping disks it can take
+    several seconds (measured: 9.5 s waking a mechanical drive), and that cannot
+    block the window from loading.
     """
     with _CACHE_LOCK:
         return _CACHE is not None
 
 
-# --- validación del ejecutable ---------------------------------------------
+# --- validating the executable ---------------------------------------------
 
 
 def _is_gui_executable(path: Path) -> tuple[bool, bool]:
-    """(es un .exe GUI de Windows, es 64 bits) leyendo sólo la cabecera PE."""
+    """(is a Windows GUI .exe, is 64-bit) from the PE header alone."""
     try:
         with open(path, "rb") as f:
             if f.read(2) != b"MZ":
@@ -80,14 +80,14 @@ def _is_gui_executable(path: Path) -> tuple[bool, bool]:
                 return False, False
             return True, machine == 0x8664
     except (OSError, struct.error):
-        # Un .exe a medias (una descarga interrumpida) se queda sin cabecera y
-        # el desempaquetado revienta. Eso no es un ejecutable válido, que es
-        # justo lo que se venía a preguntar; no es una excepción que soltar.
+        # A half-written .exe (an interrupted download) has no header and the
+        # unpacking blows up. That is not a valid executable, which is exactly
+        # what was being asked; it is not an exception worth raising.
         return False, False
 
 
 def _looks_like_trove(path: Path) -> bool:
-    """Para un .exe con nombre no estándar: ¿lleva dentro el nombre de Trove?"""
+    """For a non-standard .exe name: does it carry Trove's name inside?"""
     try:
         content = path.read_bytes()
     except OSError:
@@ -98,12 +98,12 @@ def _looks_like_trove(path: Path) -> bool:
 
 
 def find_executable(game_dir: Path) -> Path | None:
-    """El ejecutable de Trove dentro de ``game_dir``, o None si no hay ninguno.
+    """Trove's executable inside ``game_dir``, or None if there is none.
 
-    Camino rápido: los nombres canónicos ya identifican al juego, así que basta
-    con validar la cabecera (evitamos leer los ~21 MB del exe). Se prefiere el
-    binario de 64 bits. Si nada coincide, se recorre cada .exe buscando el
-    identificador dentro del fichero.
+    Fast path: the canonical names already identify the game, so validating the
+    header is enough (we avoid reading the exe's ~21 MB). The 64-bit binary is
+    preferred. If nothing matches, every .exe is walked looking for the marker
+    inside the file.
     """
     game_dir = Path(game_dir)
     for name in ("Trove_x64.exe", "Trove.exe"):
@@ -131,14 +131,14 @@ def is_valid_install(path: Path) -> bool:
     return path.is_dir() and find_executable(path) is not None
 
 
-# --- clasificación Live / PTS ----------------------------------------------
+# --- Live / PTS classification ----------------------------------------------
 
 
 def classify(path: Path, name: str = "") -> str:
-    """'pts' si la carpeta (o su nombre) es la del servidor de pruebas, si no 'live'.
+    """'pts' if the folder (or its name) is the test server's, else 'live'.
 
-    Comparamos segmentos completos de la ruta, no subcadenas, para no marcar
-    como PTS algo como ``.../scripts/...``.
+    Whole path segments are compared, not substrings, so something like
+    ``.../scripts/...`` is not marked as PTS.
     """
     if re.search(r"\bpts\b", name or "", re.IGNORECASE):
         return "pts"
@@ -151,11 +151,11 @@ def classify(path: Path, name: str = "") -> str:
 
 
 def _steam_library_paths(steam_root: Path) -> list[Path]:
-    """Rutas de biblioteca declaradas en libraryfolders.vdf.
+    """Library paths declared in libraryfolders.vdf.
 
-    Extraemos las claves ``"path"`` con una expresión regular en lugar de
-    depender de un parser VDF completo: es el único dato que necesitamos y el
-    formato de esa línea es estable.
+    The ``"path"`` keys are pulled out with a regular expression rather than
+    depending on a full VDF parser: it is the only field we need and the format
+    of that line is stable.
     """
     vdf_file = steam_root / "steamapps" / "libraryfolders.vdf"
     try:
@@ -185,12 +185,12 @@ def _trove_dirs_under_steam(steam_root: Path) -> list[Path]:
     return found
 
 
-# --- Registro de Windows ----------------------------------------------------
+# --- The Windows registry ----------------------------------------------------
 
 
 def _registry_values(root_path: str, prefix: str, value_name: str) -> list[str]:
-    """Lee ``value_name`` de cada subclave de ``root_path`` cuyo nombre empiece
-    por ``prefix``, en ambos hives y con y sin WOW6432Node."""
+    """Reads ``value_name`` from every subkey of ``root_path`` whose name starts
+    with ``prefix``, in both hives and with and without WOW6432Node."""
     out: list[str] = []
     if os.name != "nt":
         return out
@@ -224,8 +224,8 @@ def _registry_values(root_path: str, prefix: str, value_name: str) -> list[str]:
 
 
 def _fixed_drives() -> list[Path]:
-    """Unidades locales fijas. Excluimos red y extraíbles: una unidad de red
-    lenta convertiría el escaneo de arranque en una espera de varios segundos."""
+    """Fixed local drives. Network and removable ones are excluded: a slow
+    network drive would turn the start-up scan into a wait of several seconds."""
     if os.name != "nt":
         return []
     drives = []
@@ -246,16 +246,17 @@ def _fixed_drives() -> list[Path]:
 
 
 def _scan_drives_for_glyph() -> list[Path]:
-    """Busca ``<unidad>:\\[carpeta\\]Glyph\\Games\\Trove`` en las unidades fijas.
+    """Looks for ``<drive>:\\[folder\\]Glyph\\Games\\Trove`` on the fixed drives.
 
-    Existe porque el registro no siempre sabe dónde está Glyph: una instalación
-    movida, copiada o sin desinstalador (comprobado en la práctica) no deja
-    ninguna clave, y entonces el usuario tenía que añadir su carpeta a mano.
+    This exists because the registry does not always know where Glyph is: an
+    installation that was moved, copied or came without an uninstaller (seen in
+    practice) leaves no key at all, and then the user had to add their folder by
+    hand.
 
-    Sólo miramos la raíz de cada unidad y un nivel por debajo, que es donde la
-    gente pone sus carpetas de juegos (``E:\\Juegos\\Glyph\\...``). Es un listado
-    por unidad más un stat por carpeta de primer nivel: barato, y nada parecido
-    a recorrer el disco entero.
+    Only each drive's root and one level below it are looked at, which is where
+    people keep their game folders (``E:\\Games\\Glyph\\...``). That is one
+    listing per drive plus one stat per first-level folder: cheap, and nothing
+    like walking the whole disk.
     """
     found: list[Path] = []
     for drive in _fixed_drives():
@@ -263,7 +264,7 @@ def _scan_drives_for_glyph() -> list[Path]:
         try:
             candidates += [entry / _GLYPH_SUFFIX for entry in drive.iterdir()]
         except OSError:
-            pass  # unidad sin permisos o no lista: seguimos con la siguiente
+            pass  # drive not readable or not ready: on to the next
         for root in candidates:
             try:
                 if not root.is_dir():
@@ -289,12 +290,12 @@ def _glyph_dirs() -> list[Path]:
 
 
 def _wine_prefixes() -> list[Path]:
-    """Prefijos donde puede haber un Trove instalado, en Linux.
+    """Prefixes that may hold an installed Trove, on Linux.
 
-    Dos familias: los de Proton, uno por juego, bajo
-    ``steamapps/compatdata/<appid>/pfx``; y los de Wine a secas, que suelen ser
-    ``~/.wine`` o carpetas de Lutris/Bottles. No se buscan a lo ancho del disco:
-    sólo en los sitios donde por convenio están.
+    Two families: Proton's, one per game, under
+    ``steamapps/compatdata/<appid>/pfx``; and plain Wine ones, usually
+    ``~/.wine`` or Lutris/Bottles folders. They are not hunted across the whole
+    disk: only in the places convention puts them.
     """
     if os.name == "nt":
         return []
@@ -323,12 +324,12 @@ def _wine_prefixes() -> list[Path]:
 
 
 def _trove_dirs_under_prefixes() -> list[Path]:
-    """Instalaciones de Glyph dentro de un prefijo.
+    """Glyph installations inside a prefix.
 
-    Dentro, la estructura es la de Windows, así que se mira donde miraríamos en
-    un disco: ``<drive_c>/Glyph/Games/Trove/*`` y lo mismo colgando de
-    ``Program Files``/``Program Files (x86)``, que es donde el instalador de
-    Glyph la deja.
+    Inside, the layout is Windows's, so we look where we would look on a disk:
+    ``<drive_c>/Glyph/Games/Trove/*`` and the same hanging off
+    ``Program Files``/``Program Files (x86)``, which is where Glyph's installer
+    leaves it.
     """
     found: list[Path] = []
     for prefix in _wine_prefixes():
@@ -362,7 +363,7 @@ def _steam_roots() -> list[Path]:
     return roots
 
 
-# --- API pública ------------------------------------------------------------
+# --- public API ------------------------------------------------------------
 
 
 def _entry(path: Path, source: str, name: str | None = None) -> dict:
@@ -398,8 +399,8 @@ def _scan() -> list[dict]:
 
 
 def detect(custom_dirs: list | None = None) -> list[dict]:
-    """Todas las instalaciones conocidas: las detectadas (cacheadas) más las que
-    el usuario ha añadido a mano, que siempre se revalidan por si desaparecen."""
+    """Every known installation: the detected (cached) ones plus those the user
+    added by hand, which are always revalidated in case they have gone."""
     global _CACHE
     with _CACHE_LOCK:
         if _CACHE is None:

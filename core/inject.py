@@ -29,9 +29,9 @@ import time
 from ctypes import POINTER, byref, c_size_t, cast, sizeof, wintypes
 from pathlib import Path
 
-# El formato del blob es compartido: lo reimplementa en C el ayudante que corre
-# dentro del prefijo de Wine (native/troveinject.c).
-from .rift import RIFT_MAGIC, build_rift_buffer, rc4  # noqa: F401
+# The blob format is shared: the helper that runs inside the Wine prefix
+# reimplements it in C (native/troveinject.c).
+from .rift import build_rift_buffer
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -160,7 +160,7 @@ def _werr(msg: str) -> OSError:
 
 
 def list_processes() -> list[tuple[int, int, str]]:
-    """(pid, pid del padre, nombre del exe) de todos los procesos."""
+    """(pid, parent pid, exe name) for every process."""
     snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if not snap or snap == INVALID_HANDLE_VALUE.value:
         return []
@@ -178,41 +178,41 @@ def list_processes() -> list[tuple[int, int, str]]:
 
 
 def pids_by_name(name: str) -> set[int]:
-    """Todos los pids cuyo exe se llame ``name`` (sin distinguir mayúsculas)."""
+    """Every pid whose exe is called ``name`` (case-insensitive)."""
     lowered = name.lower()
     return {pid for pid, _ppid, exe in list_processes() if exe.lower() == lowered}
 
 
 def resolve_game_pid(spawn_pid: int, exe_name: str, *, exclude=(),
                      timeout: float = 30.0, log=print) -> int:
-    """Traduce el pid que devolvió ``spawn`` al pid REAL del juego.
+    """Translates the pid ``spawn`` returned into the game's REAL pid.
 
-    Con el anti-cheat presente no lanzamos el juego: lanzamos
-    ``xldr_Trove_GL_loader_x64.exe``, que arranca Trove y termina. Así que el pid
-    de CreateProcess es el del loader, y vigilarlo hace creer que la partida se
-    cerró a los pocos segundos (y, con auto-relog activo, dispara un relanzado
-    espurio). Aquí esperamos a que aparezca el proceso del juego.
+    With the anti-cheat present we do not launch the game: we launch
+    ``xldr_Trove_GL_loader_x64.exe``, which starts Trove and exits. So the pid
+    from CreateProcess is the loader's, and watching it makes it look as though
+    the session closed after a few seconds (and, with auto-relog on, fires a
+    spurious relaunch). Here we wait for the game's process to appear.
 
-    Se busca primero el hijo directo del loader; si el loader ya murió y la
-    relación de parentesco se pierde, se acepta cualquier proceso del juego que
-    no estuviera antes (``exclude``). Si nada aparece, devolvemos el pid original
-    para no quedarnos sin nada que vigilar.
+    The loader's direct child is looked for first; if the loader has already
+    died and the parent relationship is lost, any game process that was not
+    there before (``exclude``) is accepted. If nothing shows up we return the
+    original pid, so as not to be left with nothing to watch.
     """
     lowered = exe_name.lower()
     deadline = time.monotonic() + timeout
 
     while time.monotonic() < deadline:
         procs = list_processes()
-        # ¿El propio pid ya es el juego? (instalación sin loader)
+        # Is the pid itself already the game? (an installation with no loader)
         for pid, _ppid, exe in procs:
             if pid == spawn_pid and exe.lower() == lowered:
                 return spawn_pid
-        # Hijo directo del loader: lo más fiable.
+        # The loader's direct child: the most reliable answer.
         for pid, ppid, exe in procs:
             if ppid == spawn_pid and exe.lower() == lowered and pid not in exclude:
                 log(f"[inject] game process {pid} (child of loader {spawn_pid})")
                 return pid
-        # El loader ya no está: cualquier proceso del juego que sea nuevo.
+        # The loader has gone: any game process that is new.
         for pid, _ppid, exe in procs:
             if exe.lower() == lowered and pid not in exclude:
                 log(f"[inject] game process {pid} (new {exe_name})")

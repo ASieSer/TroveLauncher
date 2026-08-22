@@ -1,7 +1,7 @@
-"""¿Está este equipo listo para usar Trove Accounts Hub en Linux?
+"""Is this machine ready to run Trove Accounts Hub on Linux?
 
-Dice, en una pantalla, qué falta y qué no. Pensado para pegar la salida cuando
-algo no arranca, en vez de ir adivinando.
+Says, on one screen, what is missing and what is not. Meant for pasting the
+output when something will not start, instead of guessing.
 
     python tools/check_linux.py
 """
@@ -32,7 +32,7 @@ line("python", sys.version.split()[0], sys.version_info >= (3, 10))
 if sys.version_info < (3, 10):
     fail("Python 3.10 or newer is required.")
 
-# --- la ventana ------------------------------------------------------------
+# --- the window ------------------------------------------------------------
 try:
     import webview  # noqa: F401
     line("pywebview", "installed", True)
@@ -64,7 +64,7 @@ else:
          "     Using a virtualenv? Create it with --system-site-packages:\n"
          "     `gi` is a system package and a plain venv does NOT see it.")
 
-# --- el juego --------------------------------------------------------------
+# --- the game --------------------------------------------------------------
 from core import installs, prefs, winehost  # noqa: E402
 
 found = installs.detect()
@@ -78,15 +78,15 @@ else:
          "     (steamapps/compatdata/*/pfx) and Wine ones (~/.wine, Lutris,\n"
          "     Bottles). If yours lives elsewhere, add it by hand from the app.")
 
-# El prefijo manda sobre el runner: dentro de un prefijo de Proton se lanza con
-# ese Proton, así que hay que saber cuál es antes de preguntar por el Wine.
+# The prefix decides the runner: inside a Proton prefix the game launches with
+# that Proton, so we have to know which it is before asking about Wine.
 data = prefs.load()
 chosen = data.get("game_path") or (found[0]["path"] if found else "")
 prefix = winehost.prefix_for(Path(chosen) if chosen else None,
                              data.get("wine_prefix", ""))
 line("prefix", prefix)
 
-# --- con qué se lanza ------------------------------------------------------
+# --- what it launches with ------------------------------------------------------
 wine = winehost.find_wine(data.get("wine_binary", ""), prefix)
 line("wine", wine or "not found", bool(wine))
 if not wine:
@@ -107,14 +107,14 @@ if runners:
         mark = " ← in use" if runner["wine"] == wine else ""
         print(f"     · {runner['name']}: {runner['wine']}{mark}")
 
-# El fallo que se lleva por delante los lanzamientos en Linux sin que nada lo
-# explique: el loader del anti-cheat importa un símbolo que este Wine no tiene,
-# el juego no llega ni a abrirse y el launcher se queda en «Logging in».
+# The failure that kills launches on Linux with nothing to explain it: the
+# anti-cheat loader imports a symbol this Wine does not have, the game never
+# even opens and the launcher sits at "Logging in".
 if wine and winehost.missing_loader_symbol(wine):
     line(f"{winehost.LOADER_SYMBOL}", "MISSING from this Wine", False)
     fail(f"This Wine build does not export {winehost.LOADER_SYMBOL}, which\n"
-         "     Trove's anti-cheat loader imports: it dies with a «procedure entry\n"
-         "     point» dialog and the game never starts.\n"
+         "     Trove's anti-cheat loader imports: it dies with a \"procedure entry\n"
+         "     point\" dialog and the game never starts.\n"
          + ("     Use one of the Proton runners listed above: set it in\n"
             "     Settings → Wine, or install the game inside a Proton prefix."
             if runners else
@@ -123,10 +123,10 @@ if wine and winehost.missing_loader_symbol(wine):
 elif wine:
     line(f"{winehost.LOADER_SYMBOL}", "present", True)
 
-# --- secretos --------------------------------------------------------------
+# --- secrets --------------------------------------------------------------
 from core import vault  # noqa: E402
 
-# Se elige el almacén en silencio: su aviso ya sale abajo, con el resto.
+# The store is picked quietly: its warning already appears below with the rest.
 vault.vault(log=lambda *a: None)
 status = vault.status()
 line("keyring", status["backend"], status["available"])
@@ -136,11 +136,11 @@ if not status["available"]:
          "     will have to sign in again on every start. On a normal desktop\n"
          "     (GNOME, KDE) this is already sorted.")
 
-# --- el ayudante, DE VERDAD ------------------------------------------------
+# --- the helper, FOR REAL --------------------------------------------------
 #
-# Que el fichero exista no significa que Wine pueda ejecutarlo: el prefijo puede
-# ser de otro runner, o tener un wineserver ajeno en marcha. Se arranca contra el
-# prefijo donde vive el juego, que es el que se usará al lanzar.
+# The file existing does not mean Wine can run it: the prefix may belong to
+# another runner, or have someone else's wineserver going. It is started against
+# the prefix the game lives in, which is the one launching will use.
 helper = winehost.helper_path()
 if not helper.is_file():
     line("Wine helper", "MISSING", False)

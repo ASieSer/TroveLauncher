@@ -1,4 +1,4 @@
-"""Dónde vive todo lo que la aplicación escribe en disco."""
+"""Where everything the application writes to disk lives."""
 
 from __future__ import annotations
 
@@ -9,19 +9,40 @@ from pathlib import Path
 
 APP_DIR_NAME = "TroveAccountsHub"
 
-# Nombres que tuvo la carpeta antes, del más reciente al más antiguo. La primera
-# que aparezca con datos dentro se adopta (ver ``_adopt_legacy``).
+# Things worth telling the user that happen before there is a window to tell
+# them in: adopting the previous data folder, recovering prefs.json from its
+# backup. Packaged there is no console either, so printing alone would lose
+# them. They wait here until the interface asks for its first state and
+# ``LauncherService.state`` drains them into the log panel.
+_NOTES: list[str] = []
+
+
+def note(message: str) -> None:
+    """Record a start-up message, and print it if anyone is listening."""
+    _NOTES.append(message)
+    if sys.stdout is not None:
+        print(message)
+
+
+def drain_notes() -> list[str]:
+    """Take the pending start-up messages. They are only reported once."""
+    pending = list(_NOTES)
+    _NOTES.clear()
+    return pending
+
+# Names the folder had before, newest first. The first one found with data
+# inside is adopted (see ``_adopt_legacy``).
 LEGACY_APP_DIR_NAMES = ("TroveLauncher",)
 
-# Deja constancia de la adopción para no repetirla si el usuario borra su
-# prefs.json y empieza de cero a propósito.
+# Records that the adoption happened, so it is not repeated if the user wipes
+# their prefs.json and deliberately starts over.
 _ADOPTED_MARK = "adopted-from.txt"
 
 _adoption_checked = False
 
 
 def _roaming_dir() -> Path:
-    """Raíz donde vive la carpeta de la aplicación, sin crearla."""
+    """Root the application folder lives under, without creating it."""
     if sys.platform == "win32":
         base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
         return Path(base)
@@ -30,26 +51,26 @@ def _roaming_dir() -> Path:
 
 
 def _adopt_legacy(new: Path) -> None:
-    """Trae los datos de la carpeta del nombre anterior, una sola vez.
+    """Bring over the data from the previously named folder, exactly once.
 
-    La aplicación pasó de llamarse Trove Launcher a Trove Accounts Hub. La
-    carpeta sigue el nombre, pero dentro están las cuentas, los tickets y las
-    contraseñas de quien ya la usaba: sin esto, la primera versión renombrada le
-    aparecería vacía, como una instalación nueva.
+    The application was renamed from Trove Launcher to Trove Accounts Hub. The
+    folder follows the name, but inside it are the accounts, tickets and
+    passwords of anyone already using it: without this, the first renamed
+    version would look empty to them, like a fresh install.
 
-    Se **copia**, no se mueve: si alguien vuelve a una versión anterior, la
-    carpeta vieja sigue donde estaba y con sus datos. El precio es un duplicado
-    en disco, que es justo lo que cuesta poder dar marcha atrás.
+    It **copies**, it does not move: if someone goes back to an earlier version,
+    the old folder is still there with its data. The price is a duplicate on
+    disk, which is exactly what being able to go back costs.
 
-    Nunca pisa un fichero que ya exista en destino y nunca interrumpe el
-    arranque: si la copia falla a medias, lo que se haya traído se queda y el
-    resto sigue en la carpeta vieja.
+    It never overwrites a file that already exists at the destination and never
+    interrupts start-up: if the copy fails halfway, what was brought over stays
+    and the rest remains in the old folder.
 
-    Los blobs DPAPI (``auth-*.bin``, ``cred-*.bin``) se descifran igual desde la
-    ruta nueva: van atados al usuario de Windows y a la máquina, no a la
-    carpeta. Por eso la entropía de las contraseñas sigue diciendo
-    ``TroveLauncher...``, que es un identificador y no un nombre a la vista:
-    cambiarla dejaría ilegibles las contraseñas ya guardadas.
+    The DPAPI blobs (``auth-*.bin``, ``cred-*.bin``) decrypt just the same from
+    the new path: they are tied to the Windows user and the machine, not to the
+    folder. That is why the password entropy still reads ``TroveLauncher...`` —
+    it is an identifier, not a user-visible name, and changing it would render
+    already-saved passwords unreadable.
     """
     global _adoption_checked
     if _adoption_checked:
@@ -75,23 +96,23 @@ def _adopt_legacy(new: Path) -> None:
                     shutil.copy2(src, dst)
                 copied += 1
         except OSError as exc:
-            print(f"[paths] adopción incompleta desde {name}: {exc}")
+            note(f"[paths] incomplete adoption from {name}: {exc}")
         try:
             (new / _ADOPTED_MARK).write_text(
-                f"{copied} elementos copiados desde {old}\n", encoding="utf-8")
+                f"{copied} items copied from {old}\n", encoding="utf-8")
         except OSError:
             pass
-        print(f"[paths] datos adoptados desde {old} ({copied} elementos); "
-              f"la carpeta anterior se deja intacta")
+        note(f"[paths] adopted data from {old} ({copied} items); "
+             f"the previous folder is left untouched")
         return
 
 
 def app_data_dir() -> Path:
-    """Carpeta base, por usuario, para todo lo que guardamos.
+    """Per-user base folder for everything we store.
 
-    Windows: ``%APPDATA%/TroveAccountsHub``. En otras plataformas caemos a
-    ``$XDG_DATA_HOME`` (o ``~/.local/share``), donde sólo tiene sentido la parte
-    de actualización — lanzar el juego requiere Win32.
+    Windows: ``%APPDATA%/TroveAccountsHub``. On other platforms we fall back to
+    ``$XDG_DATA_HOME`` (or ``~/.local/share``), where only the updating side
+    makes sense on its own - launching the game needs Win32 or Wine.
     """
     d = _roaming_dir() / APP_DIR_NAME
     d.mkdir(parents=True, exist_ok=True)
@@ -100,9 +121,9 @@ def app_data_dir() -> Path:
 
 
 def trove_appdata_dir() -> Path:
-    """La carpeta ``%APPDATA%/Trove`` que usa el propio juego (ahí viven ModCfgs).
+    """The ``%APPDATA%/Trove`` folder the game itself uses (ModCfgs lives there).
 
-    No la creamos si no existe fuera de Windows: allí el juego no está instalado.
+    We do not create it off Windows: the game is not installed natively there.
     """
     if sys.platform == "win32":
         base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
@@ -119,12 +140,12 @@ def macaddr_path() -> Path:
 
 
 def base_dir() -> Path:
-    """Raíz de la aplicación: de dónde cuelgan ``web/`` y ``native/``.
+    """The application root: what ``web/`` and ``native/`` hang off.
 
-    Congelada con PyInstaller, los datos no viven junto al ejecutable sino en la
-    carpeta que él prepara y anuncia en ``sys._MEIPASS`` (``_internal/`` en un
-    paquete de carpeta, un temporal en uno de fichero único). Mirar junto al
-    ejecutable funcionaba con PyInstaller 5 y dejó de hacerlo en el 6.
+    Frozen with PyInstaller, the data does not live next to the executable but in
+    the folder it prepares and announces in ``sys._MEIPASS`` (``_internal/`` in a
+    folder bundle, a temporary directory in a one-file one). Looking next to the
+    executable worked with PyInstaller 5 and stopped working in 6.
     """
     if getattr(sys, "frozen", False):
         return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))

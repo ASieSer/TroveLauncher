@@ -1,24 +1,23 @@
-"""Dónde se guardan los secretos, según el sistema.
+"""Where secrets are kept, depending on the system.
 
-Dos cosas de una cuenta son secretas: su **contraseña** de Glyph y su **ticket**
-de Trion, que es una credencial de sesión viva durante unas 48 horas. Ninguna de
-las dos puede acabar en claro en el disco.
+Two things about an account are secret: its Glyph **password** and its Trion
+**ticket**, which is a session credential live for about 48 hours. Neither may
+end up in the clear on disk.
 
-En Windows eso lo resuelve DPAPI (``CryptProtectData``, ámbito de usuario): el
-blob cifrado se escribe en un fichero de nuestra carpeta y sólo este usuario en
-esta máquina puede volver a leerlo. En Linux no existe DPAPI, así que el sitio
-equivalente es el **Secret Service** del escritorio (GNOME Keyring, KWallet…) a
-través de ``keyring``: el secreto no llega a tocar nuestra carpeta.
+On Windows DPAPI solves that (``CryptProtectData``, user scope): the encrypted
+blob is written to a file in our folder and only this user on this machine can
+read it back. Linux has no DPAPI, so the equivalent place is the desktop
+**Secret Service** (GNOME Keyring, KWallet...) through ``keyring``: the secret
+never touches our folder at all.
 
-Este módulo esconde esa diferencia detrás de un almacén con cuatro operaciones.
-La clave de cada secreto (``auth-<hash>``, ``cred-<hash>``) es la misma en los
-dos sistemas, y en Windows coincide con el nombre de fichero que ya se venía
-usando: quien actualice no pierde nada.
+This module hides that difference behind a store with four operations. Each
+secret's key (``auth-<hash>``, ``cred-<hash>``) is the same on both systems, and
+on Windows it matches the filename already in use: upgrading loses nothing.
 
-**Si no hay dónde guardar, no se guarda.** Sin DPAPI o sin Secret Service, la
-contraseña sencillamente no se recuerda y el ticket se queda en memoria, vivo
-sólo mientras dure la sesión de la aplicación. Antes el ticket caía a texto
-plano, que es exactamente lo que no debe pasar con una credencial viva.
+**If there is nowhere to keep it, it is not kept.** Without DPAPI or a Secret
+Service the password is simply not remembered and the ticket stays in memory,
+alive only for as long as the application session. The ticket used to fall back
+to plaintext, which is exactly what must not happen to a live credential.
 """
 
 from __future__ import annotations
@@ -31,12 +30,12 @@ from pathlib import Path
 
 from .paths import app_data_dir
 
-# Nombre con el que aparecemos en el llavero del escritorio.
+# The name we appear under in the desktop keyring.
 KEYRING_SERVICE = "Trove Accounts Hub"
 
 
 class Vault:
-    """Interfaz común. ``available`` en False significa "no guardes nada"."""
+    """The common interface. ``available`` False means "store nothing"."""
 
     name = "none"
     available = False
@@ -51,7 +50,7 @@ class Vault:
         pass
 
 
-# --- Windows: DPAPI + fichero ----------------------------------------------
+# --- Windows: DPAPI + a file ----------------------------------------------
 
 
 class _DataBlob(ctypes.Structure):
@@ -92,10 +91,10 @@ def dpapi_unprotect(data: bytes, entropy: bytes | None = None) -> bytes:
 
 
 class DpapiVault(Vault):
-    """Cifra con DPAPI y escribe el blob en ``<datos>/<clave>.bin``.
+    """Encrypts with DPAPI and writes the blob to ``<data>/<key>.bin``.
 
-    Los nombres y la entropía son los de siempre a propósito: este módulo es
-    nuevo, pero los ficheros que lee ya estaban ahí.
+    The names and the entropy are the long-standing ones on purpose: this module
+    is new, but the files it reads were already there.
     """
 
     name = "DPAPI"
@@ -131,15 +130,15 @@ class DpapiVault(Vault):
             pass
 
 
-# --- Linux: Secret Service del escritorio ----------------------------------
+# --- Linux: the desktop Secret Service ----------------------------------
 
 
 class KeyringVault(Vault):
-    """Guarda en el llavero del escritorio a través de ``keyring``.
+    """Stores in the desktop keyring through ``keyring``.
 
-    El secreto se guarda en base64 porque el Secret Service maneja cadenas, no
-    bytes. La ``entropy`` de DPAPI no tiene equivalente aquí y se ignora: el
-    aislamiento lo da el propio llavero, que sólo abre la sesión del usuario.
+    The secret is kept base64-encoded because the Secret Service handles strings,
+    not bytes. DPAPI's ``entropy`` has no equivalent here and is ignored: the
+    isolation comes from the keyring itself, which only the user's session opens.
     """
 
     name = "Secret Service"
@@ -172,10 +171,10 @@ class KeyringVault(Vault):
         try:
             self._keyring.delete_password(KEYRING_SERVICE, key)
         except Exception:
-            pass  # no estaba, o el llavero no responde: nada que borrar
+            pass  # not there, or the keyring is not answering: nothing to delete
 
 
-# --- selección -------------------------------------------------------------
+# --- picking one -------------------------------------------------------------
 
 _vault: Vault | None = None
 _lock = threading.Lock()
@@ -192,9 +191,9 @@ def _pick(log=print) -> tuple[Vault, str]:
         return Vault(), (f"the keyring module is missing ({exc}); passwords will not be "
                          f"remembered and the ticket will live in memory only")
 
-    # Que el módulo esté no significa que haya un llavero detrás: en una sesión
-    # sin D-Bus, keyring elige un backend que falla al primer uso. Se comprueba
-    # aquí, una vez, en lugar de descubrirlo al guardar una contraseña.
+    # The module being present does not mean there is a keyring behind it: in a
+    # session without D-Bus, keyring picks a backend that fails on first use. It
+    # is probed here, once, rather than discovered while saving a password.
     try:
         backend = keyring.get_keyring()
         probe = f"{KEYRING_SERVICE} probe"
@@ -211,7 +210,7 @@ def _pick(log=print) -> tuple[Vault, str]:
 
 
 def vault(log=print) -> Vault:
-    """El almacén de este sistema. Se elige una vez y se recuerda."""
+    """This system's store. Picked once and remembered."""
     global _vault, _reason
     with _lock:
         if _vault is None:
@@ -223,17 +222,17 @@ def vault(log=print) -> Vault:
 
 
 def status() -> dict:
-    """Para la interfaz: qué almacén hay y, si no hay, por qué."""
+    """For the interface: which store there is and, if there is none, why."""
     v = vault()
     return {"backend": v.name, "available": v.available, "detail": _reason}
 
 
 def _purge_plaintext_leftovers(log=print) -> None:
-    """Borra tickets que una versión anterior pudo dejar en claro.
+    """Deletes tickets an earlier version may have left in the clear.
 
-    Fuera de Windows, ``trionauth`` escribía el ticket sin cifrar cuando DPAPI no
-    estaba disponible. Ya no lo hace, pero un fichero de entonces seguiría ahí
-    con una credencial legible dentro, así que se retira en cuanto lo vemos.
+    Off Windows, ``trionauth`` used to write the ticket unencrypted when DPAPI
+    was unavailable. It no longer does, but a file from back then would still be
+    sitting there with a readable credential inside, so it is removed on sight.
     """
     if sys.platform == "win32":
         return

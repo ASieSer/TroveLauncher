@@ -1,20 +1,21 @@
-"""Puente entre la interfaz web y ``core.service``.
+"""Bridge between the web interface and ``core.service``.
 
-pywebview expone cada método público de esta clase en
-``window.pywebview.api.<nombre>`` y devuelve una promesa con lo que retorne.
+pywebview exposes every public method of this class at
+``window.pywebview.api.<name>`` and returns a promise with whatever it returns.
 
-Dos reglas para todo lo que hay aquí:
+Two rules for everything in here:
 
-  * Nada lanza excepciones hacia JS. Un fallo vuelve como
-    ``{"ok": false, "error": "..."}`` para que la interfaz pueda enseñarlo tal
-    cual en lugar de romperse con una promesa rechazada.
-  * Todo lo devuelto debe ser serializable a JSON (nada de Path ni objetos).
+  * Nothing raises towards JS. A failure comes back as
+    ``{"ok": false, "error": "..."}`` so the interface can show it as-is instead
+    of breaking on a rejected promise.
+  * Everything returned must be JSON-serialisable (no Path objects, no
+    arbitrary instances).
 
-Los atributos de instancia van con guion bajo a propósito: pywebview recorre los
-atributos públicos del objeto ``js_api`` para exponerlos al lado JS, y al llegar
-al objeto nativo de la ventana entra en una recursión infinita
-(``window.native.AccessibilityObject.Bounds.Empty.Empty...``). Con el guion bajo
-los ignora y sólo publica los métodos.
+The instance attributes carry a leading underscore on purpose: pywebview walks
+the public attributes of the ``js_api`` object to expose them to the JS side,
+and on reaching the window's native object it falls into infinite recursion
+(``window.native.AccessibilityObject.Bounds.Empty.Empty...``). With the
+underscore it skips them and publishes only the methods.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from core.service import LauncherService
 
 
 def _safe(method):
-    """Convierte cualquier excepción del servicio en una respuesta de error."""
+    """Turns any exception from the service into an error reply."""
     @functools.wraps(method)
     def _wrapper(self, *args, **kwargs):
         try:
@@ -46,20 +47,20 @@ def _safe(method):
 class Api:
     def __init__(self, service: LauncherService):
         self._service = service
-        self._window = None  # lo rellena main.py una vez creada la ventana
+        self._window = None  # filled in by main.py once the window exists
 
     def _set_window(self, window) -> None:
-        """Llamado desde main.py en cuanto existe la ventana. Con guion bajo para
-        que pywebview no lo publique como método invocable desde JS."""
+        """Called from main.py as soon as the window exists. Underscored so that
+        pywebview does not publish it as a method callable from JS."""
         self._window = window
 
-    # --- estado -------------------------------------------------------------
+    # --- state -------------------------------------------------------------
 
     @_safe
     def get_state(self):
         return {"state": self._service.state()}
 
-    # --- jugar --------------------------------------------------------------
+    # --- play --------------------------------------------------------------
 
     @_safe
     def play(self, options):
@@ -92,7 +93,7 @@ class Api:
     def cancel_2fa(self, email):
         return self._service.cancel_2fa(email)
 
-    # --- cuentas ------------------------------------------------------------
+    # --- accounts ------------------------------------------------------------
 
     @_safe
     def add_account(self, options):
@@ -122,7 +123,7 @@ class Api:
     def set_password(self, email, password):
         return self._service.set_password(email, password)
 
-    # --- grupos -------------------------------------------------------------
+    # --- groups -------------------------------------------------------------
 
     @_safe
     def create_group(self, name):
@@ -142,7 +143,7 @@ class Api:
         return self._service.reorder(groups=payload.get("groups"),
                                      accounts=payload.get("accounts"))
 
-    # --- mantenimiento ------------------------------------------------------
+    # --- maintenance ------------------------------------------------------
 
     @_safe
     def check(self, target):
@@ -156,7 +157,7 @@ class Api:
     def repair(self, target):
         return self._service.repair(target)
 
-    # --- instalaciones y carpetas -------------------------------------------
+    # --- installations and folders -------------------------------------------
 
     @_safe
     def set_install(self, path, kind):
@@ -164,8 +165,8 @@ class Api:
 
     @_safe
     def browse_for_install(self, kind):
-        """Abre el selector de carpetas nativo, valida lo elegido y lo fija como
-        instalación de Live o de PTS."""
+        """Opens the native folder picker, validates the choice and sets it as
+        the Live or the PTS installation."""
         import webview
 
         if self._window is None:
@@ -193,7 +194,7 @@ class Api:
     def open_folder(self, kind):
         return self._service.open_folder(kind)
 
-    # --- preferencias -------------------------------------------------------
+    # --- preferences -------------------------------------------------------
 
     @_safe
     def save_prefs(self, changes):
@@ -207,3 +208,32 @@ class Api:
     @_safe
     def set_auto_relog(self, email, enabled):
         return self._service.set_auto_relog(email, enabled)
+
+    # --- appearance ---------------------------------------------------------
+
+    @_safe
+    def set_window_icon(self, frames):
+        """Repaint the title-bar and taskbar icon to match the theme.
+
+        `frames` is what the interface drew: {"16": "<base64 RGBA>", ...}. The
+        pixels come from the front end because it is the side that knows the
+        accent and can draw; all that is left here is the Win32 part.
+        """
+        import base64
+
+        from core import winicon
+
+        if self._window is None:
+            return {"ok": False, "error": "The window is not ready yet."}
+        try:
+            hwnd = int(self._window.native.Handle.ToInt64())
+        except Exception:
+            return {"ok": True, "applied": False}   # not a Win32 window
+
+        decoded = {}
+        for size, data in (frames or {}).items():
+            try:
+                decoded[int(size)] = base64.b64decode(data)
+            except Exception:
+                continue
+        return {"ok": True, "applied": winicon.apply(hwnd, decoded)}

@@ -1,7 +1,7 @@
-/* Quantico (Google Fonts, SIL Open Font License 1.1) servida en local:
-   la app carga desde file:// y no puede depender de que haya internet.
-   La familia sólo publica latin en 400 y 700; los pesos intermedios que usa la
-   interfaz los resuelve el navegador contra esos dos. */
+/* Quantico (Google Fonts, SIL Open Font License 1.1) served locally: the app
+   loads over file:// and cannot depend on there being internet.
+   The family only publishes latin at 400 and 700; the intermediate weights the
+   interface uses are synthesised by the browser from those two. */
 /* latin */
 @font-face {
   font-family: 'Quantico';

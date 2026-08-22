@@ -21,8 +21,8 @@ from typing import Callable
 
 import requests
 
-# `secrets` de la stdlib (arriba) y nuestro `vault` son cosas distintas: el
-# primero genera aleatoriedad, el segundo guarda credenciales.
+# The stdlib's `secrets` (above) and our `vault` are different things: the
+# first generates randomness, the second stores credentials.
 from . import vault as vault_mod
 
 AUTH_HOST = "https://auth.trionworlds.com"
@@ -125,10 +125,10 @@ class TrionAuth:
 
     # -- cache --
     #
-    # El ticket va al almacén de secretos del sistema, nunca a un fichero
-    # nuestro. Si no hay almacén, `set` devuelve False y el ticket se queda
-    # sólo en memoria: se vuelve a pedir en el siguiente arranque, que es
-    # molesto pero es lo correcto para una credencial viva.
+    # The ticket goes to the system secret store, never to a file of ours. With
+    # no store, `set` returns False and the ticket stays in memory only: it is
+    # asked for again on the next start, which is annoying but is the right
+    # thing to do with a live credential.
     def _load_cache(self) -> dict | None:
         raw = vault_mod.vault(self._log).get(self._cache_key)
         if not raw:
@@ -145,8 +145,8 @@ class TrionAuth:
                "minted": minted if minted is not None else time.time()}
         raw = json.dumps(rec).encode("utf-8")
         if not vault_mod.vault(self._log).set(self._cache_key, raw):
-            self._log("[auth] sin almacén de secretos: el ticket se queda en "
-                      "memoria y habrá que volver a entrar en el próximo arranque")
+            self._log("[auth] no secret store: the ticket stays in memory and "
+                      "you will have to sign in again on the next start")
 
     def _invalidate(self) -> None:
         vault_mod.vault(self._log).delete(self._cache_key)

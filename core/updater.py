@@ -179,14 +179,3 @@ class Updater:
                       f"downloaded={downloaded} unchanged={unchanged} failed={failed}")
             return {"version": version, "downloaded": downloaded,
                     "unchanged": unchanged, "failed": failed, "skipped": False}
-
-
-def update_game(*, base, prefix, branch, game_dir, db_path, key_file=None,
-                adopt=True, progress=None, log=print) -> dict:
-    """One-shot convenience wrapper (safe to call from a worker thread)."""
-    up = Updater(base=base, prefix=prefix, branch=branch, game_dir=game_dir,
-                 db_path=db_path, log=log)
-    try:
-        return up.update(key_file=key_file, adopt=adopt, progress=progress)
-    finally:
-        up.close()

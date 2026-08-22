@@ -1,44 +1,43 @@
-"""Orquestador del launcher: lo que la interfaz llama de verdad.
+"""The launcher's orchestrator: what the interface actually calls.
 
-Modelo de lanzamiento
----------------------
-
-Cada **cuenta** lleva su propia región (NA/EU/PTS) y se lanza desde su fila, sin
-que exista una «cuenta activa» global. La región determina dos cosas:
-
-  * el servidor de autenticación al que apunta el juego, y
-  * qué instalación se usa: NA y EU comparten los archivos de Live, mientras que
-    PTS necesita la carpeta de PTS. Por eso ``_resolve_game_dir`` elige carpeta
-    según la región y no según un selector global.
-
-Concurrencia
+Launch model
 ------------
 
-Las operaciones pesadas (comprobar, actualizar, reparar) corren en un hilo
-demonio y sólo una a la vez, protegida por ``_busy``. Los **lanzamientos** son la
-excepción: se preparan varios a la vez, porque lanzar un grupo entero es
-justamente el caso de uso. Cada lanzamiento lleva su propio hilo y su propia cola
-de 2FA, identificada por el email.
+Each **account** carries its own region (NA/EU/PTS) and launches from its own
+card; there is no global "active account". The region decides two things:
 
-Lo que NO va en paralelo son dos cosas, y las dos por el mismo motivo —que se
-pisan entre ellas sobre un recurso compartido:
+  * which authentication server the game points at, and
+  * which installation is used: NA and EU share the Live files, while PTS needs
+    the PTS folder. That is why ``_resolve_game_dir`` picks the folder from the
+    region rather than from a global selector.
 
-  * la fase de actualización, una por carpeta de juego (``_sync_for_play``), y
-  * el arranque en sí (``_spawn_game``), de uno en uno: no se lanza la siguiente
-    cuenta hasta que la anterior está levantada. El proceso del juego se
-    identifica por «el que no estaba antes», y dos arranques a la vez se
-    adjudican el mismo —cuando el loader del anti-cheat no se cae directamente
-    sin lanzar nada.
+Concurrency
+-----------
+
+The heavy operations (check, update, repair) run on a daemon thread and only one
+at a time, guarded by ``_busy``. **Launches** are the exception: several are
+prepared at once, because launching a whole group is precisely the use case.
+Each launch gets its own thread and its own 2FA queue, keyed by email.
+
+Two things do NOT run in parallel, both for the same reason - they would tread
+on each other over a shared resource:
+
+  * the update phase, one per game folder (``_sync_for_play``), and
+  * the start itself (``_spawn_game``), one at a time: the next account is not
+    launched until the previous one is up. The game process is identified as
+    "the one that was not there before", and two simultaneous starts claim the
+    same one - when the anti-cheat loader does not simply fall over without
+    launching anything at all.
 
 Auto-relog
 ----------
 
-Tras lanzar, un hilo vigila el PID. Cuando el juego termina —se haya caído o se
-haya cerrado con normalidad, que es lo que pasa al echarte por inactividad—
-volvemos a autenticar y relanzar. No se relanza lo que cerró el usuario desde el
-launcher, ni lo que se muere antes de ``_MIN_UPTIME_FOR_RELOG``, para no
-encadenar arranques fallidos. Y si la caída dejó abierto el reportador de fallos
-de Trove, se cierra: ver ``_close_crash_handler``.
+After launching, a thread watches the PID. When the game ends - whether it
+crashed or closed normally, which is what being kicked for idling looks like -
+we authenticate again and relaunch. What the user closed from the launcher is
+not relaunched, nor is anything that dies before ``_MIN_UPTIME_FOR_RELOG``, so
+failed starts do not chain. And if the crash left Trove's crash reporter open,
+it is closed: see ``_close_crash_handler``.
 """
 
 from __future__ import annotations
@@ -51,12 +50,14 @@ from pathlib import Path
 from . import gamehost, installs, prefs, trionauth
 from . import vault as vault_mod
 from . import updater as _updater
+from . import paths as paths_mod
+from . import paths as paths_mod
 from .paths import app_data_dir, macaddr_path, trove_appdata_dir
 
-# --- constantes -------------------------------------------------------------
+# --- constants -------------------------------------------------------------
 
-# CDN de actualizaciones de Trion (HTTP plano, sin autenticación). El doble
-# slash tras el prefijo es deliberado: replica literalmente lo que hace Glyph.
+# Trion's update CDN (plain HTTP, no authentication). The double slash after
+# the prefix is deliberate: it copies literally what Glyph does.
 UPDATE_BASE = "http://trove-update.dyn.triongames.com"
 UPDATE_PREFIX = "/kiwi-live-client-patch/"
 
@@ -64,46 +65,45 @@ GLYPH_USER_AGENT = "Glyph (stable-248-1-a-336302)"
 GLYPH_CHANNEL = "131"
 KEY_FILE = "Trove_x64.exe"
 
-# Proceso bajo el que reparentar el lanzamiento cuando la opción está activa.
-# Ver core/inject.py: sólo cambia la ancestría del proceso, y únicamente si Glyph
-# ya está corriendo. Desactivado por defecto.
+# The process to reparent the launch under when the option is on. See
+# core/inject.py: it only changes the process ancestry, and only if Glyph is
+# already running. Off by default.
 REPARENT_PROCESS = "GlyphClientApp.exe"
 
-# región -> (rama del CDN, tipo de instalación que necesita)
+# region -> (CDN branch, installation kind it needs)
 REGION_BRANCH = {"NA": ("live-us", "live"), "EU": ("live-us", "live"),
                  "PTS": ("pts", "pts")}
 
-_CANCEL_2FA = object()          # centinela que aborta un lanzamiento en espera de código
-_MIN_UPTIME_FOR_RELOG = 25.0    # segundos: si muere antes, no relanzamos
+_CANCEL_2FA = object()          # sentinel that aborts a launch waiting for a code
+_MIN_UPTIME_FOR_RELOG = 25.0    # seconds: dying sooner than this means no relaunch
 
-# Respiro entre una partida ya levantada y el siguiente arranque. No es
-# estética: el proceso del juego se identifica por "el que no estaba antes", así
-# que el anterior tiene que haber aparecido ya en la lista cuando el siguiente
-# mire, y al loader del anti-cheat le sienta mal que se le pisen los arranques.
+# Breathing room between a session that is up and the next start. Not cosmetic:
+# the game process is identified as "the one that was not there before", so the
+# previous one must already appear in the list by the time the next looks, and
+# the anti-cheat loader does not take kindly to overlapping starts.
 _LAUNCH_GAP = 3.0
 
-# Tope de espera a que una partida termine de arrancar. No es el tiempo que se
-# espera —se sigue en cuanto el juego está en pie— sino hasta cuándo se aguanta
-# antes de dar por hecho que ya tarda demasiado y seguir con la siguiente.
+# Cap on waiting for a session to finish starting. Not how long we wait - we
+# carry on as soon as the game is up - but how long we put up with it before
+# assuming it is taking too long and moving on to the next.
 _LAUNCH_READY_TIMEOUT = 120.0
 
-# Cuánto damos por buena una sincronización recién hecha sobre la misma carpeta.
-# Lanzar diez cuentas no son diez comprobaciones de actualización seguidas de la
-# misma instalación.
+# How long a just-completed sync over the same folder is taken as good. Ten
+# accounts launching is not ten update checks in a row on one installation.
 _UPDATE_FRESH_FOR = 120.0
 
-# El reportador de fallos que Trove deja abierto al crashear. No conocemos su
-# nombre exacto en todas las instalaciones, así que se busca por esta pista y se
-# exige además que sea cosa de ESTA partida (ver _close_crash_handler).
+# The crash reporter Trove leaves open when it crashes. We do not know its exact
+# name across every installation, so it is found by this hint and additionally
+# required to belong to THIS session (see _close_crash_handler).
 _CRASH_HINT = "crash"
 
 
 class LauncherService:
-    """Toda la lógica del launcher. La UI sólo llama a métodos de esta clase."""
+    """All the launcher logic. The UI only calls methods on this class."""
 
     def __init__(self, emit=None, log=print):
-        # ``emit(payload: dict)`` empuja un evento a la interfaz. Si no hay UI
-        # conectada todavía, los eventos se descartan sin ruido.
+        # ``emit(payload: dict)`` pushes an event to the interface. With no UI
+        # attached yet, events are dropped quietly.
         self._emit_cb = emit
         self._log = log
 
@@ -111,41 +111,39 @@ class LauncherService:
         self._busy = False
         self._busy_op: str | None = None
 
-        # Una cola de 2FA por email: varios lanzamientos pueden estar esperando
-        # código a la vez, y cada diálogo debe desbloquear el suyo.
+        # One 2FA queue per email: several launches can be waiting for a code
+        # at once, and each dialog must unblock its own.
         self._2fa: dict[str, queue.Queue] = {}
         self._2fa_lock = threading.Lock()
 
         self._launch_lock = threading.Lock()
         self._launches: dict[int, dict] = {}
-        # email -> 'launching' | 'checking': qué tiene ocupada a cada cuenta, para
-        # que su fila lo refleje y no se pueda lanzar y comprobar a la vez.
+        # email -> 'launching' | 'checking': what is keeping each account busy,
+        # so its card reflects it and it cannot launch and check at once.
         self._account_busy: dict[str, str] = {}
-        # pids que estamos matando a propósito: su muerte NO debe disparar el
-        # auto-relog, porque el usuario pidió explícitamente cerrar el juego.
+        # pids we are killing on purpose: their death must NOT trigger the
+        # auto-relog, because the user explicitly asked to close the game.
         self._stopping: set[int] = set()
 
-        # Los lanzamientos se preparan en paralelo pero ARRANCAN de uno en uno:
-        # ver _spawn_game. El sello es del último arranque, para dejar el respiro.
+        # Launches are prepared in parallel but START one at a time: see
+        # _spawn_game. The stamp is of the last start, to leave the gap.
         self._spawn_gate = threading.Lock()
         self._last_spawn_at = 0.0
 
-        # Una carpeta de juego, una actualización a la vez: lanzar diez cuentas
-        # no puede poner diez updaters a escribir sobre los mismos archivos.
+        # One game folder, one update at a time: launching ten accounts cannot
+        # put ten updaters writing over the same files.
         self._dir_locks: dict[str, threading.Lock] = {}
         self._dir_synced: dict[str, float] = {}
         self._dir_guard = threading.Lock()
 
-        # email -> {"ok": bool, "detail": str}: resultado del último intento real
-        # (comprobar o lanzar) EN ESTA SESIÓN. Deliberadamente en memoria y no en
-        # disco: al abrir el launcher no sabemos si una cuenta entra hasta
-        # probarla, así que arranca en gris en vez de mentir con un "Ready".
+        # email -> {"ok": bool, "detail": str}: the result of the last real
+        # attempt (check or launch) IN THIS SESSION. Deliberately in memory and
+        # not on disk: on opening the launcher we do not know whether an account
+        # signs in until it is tried, so it starts grey instead of lying with a
+        # "Ready".
         self._last_result: dict[str, dict] = {}
 
-    def set_emitter(self, emit) -> None:
-        self._emit_cb = emit
-
-    # --- eventos hacia la UI ------------------------------------------------
+    # --- events towards the UI ------------------------------------------------
 
     def emit(self, op: str, stage: str, **fields) -> None:
         payload = {"op": op, "stage": stage}
@@ -155,17 +153,22 @@ class LauncherService:
         try:
             self._emit_cb(payload)
         except Exception:
-            pass  # la UI no está escuchando (ventana cerrándose): nada que hacer
+            pass  # the UI is not listening (window closing): nothing to do
 
     def _logger(self, op: str, email: str = ""):
+        """A logger tagged with the operation it belongs to.
+
+        It only calls ``self._log``: that already reaches the log panel (see
+        ``_make_logger`` in main.py). Emitting here as well put every line in
+        the panel twice.
+        """
         def _log(message) -> None:
             self._log(f"[{op}] {message}")
-            self.emit(op, "log", message=str(message), email=email)
         return _log
 
     def _progress(self, op: str, stage: str = "downloading", email: str = ""):
-        """Callback de progreso limitado a un evento cada 150 ms, pero que
-        siempre deja pasar el último (si no, la barra se queda a medias)."""
+        """Progress callback throttled to one event every 150 ms, but which
+        always lets the last one through (else the bar stops half-way)."""
         last = [0.0]
 
         def _cb(seen: int, total: int, downloaded: int) -> None:
@@ -177,12 +180,7 @@ class LauncherService:
                       email=email)
         return _cb
 
-    # --- planificación del hilo de trabajo ----------------------------------
-
-    @property
-    def busy(self) -> bool:
-        with self._state_lock:
-            return self._busy
+    # --- worker-thread scheduling ----------------------------------
 
     def _begin(self, op: str) -> bool:
         with self._state_lock:
@@ -198,10 +196,10 @@ class LauncherService:
             self._busy_op = None
 
     def _spawn(self, op: str, target) -> dict:
-        """Ejecuta ``target()`` en un hilo demonio si no hay otra cosa en curso.
+        """Runs ``target()`` on a daemon thread if nothing else is in progress.
 
-        Sólo para mantenimiento: los lanzamientos usan ``_spawn_launch``, que no
-        toma el cerrojo porque varias cuentas pueden arrancar a la vez.
+        Maintenance only: launches go their own way and do not take this lock,
+        because several accounts may start at once.
         """
         if not self._begin(op):
             return {"started": False, "error": "Another operation is already running.",
@@ -219,12 +217,12 @@ class LauncherService:
         threading.Thread(target=_run, daemon=True, name=f"trove-{op}").start()
         return {"started": True}
 
-    # --- instalaciones ------------------------------------------------------
+    # --- installations ------------------------------------------------------
 
     def install_list(self) -> list[dict]:
-        """Instalaciones ya conocidas. Si aún no se ha escaneado, devuelve lo que
-        haya y lanza el escaneo en segundo plano: la ventana no debe esperar a
-        que un disco dormido despierte."""
+        """Installations already known. If nothing has been scanned yet, returns
+        what there is and kicks the scan off in the background: the window must
+        not wait for a sleeping disk to wake up."""
         custom = prefs.load().get("custom_dirs", [])
         if installs.is_scanned():
             return installs.detect(custom)
@@ -242,11 +240,11 @@ class LauncherService:
         self.emit("installs", "update", installs=found)
 
     def _resolve_game_dir(self, region: str) -> Path:
-        """Carpeta del juego que corresponde a una región.
+        """The game folder that goes with a region.
 
-        NA y EU usan los archivos de Live; PTS necesita su propia carpeta. Si el
-        usuario no ha fijado una carpeta de PTS, cogemos la primera instalación
-        detectada de ese tipo antes de rendirnos.
+        NA and EU use the Live files; PTS needs its own folder. If the user has
+        not set a PTS folder, we take the first detected installation of that
+        kind before giving up.
         """
         _branch, kind = REGION_BRANCH.get(region, REGION_BRANCH["EU"])
         data = prefs.load()
@@ -286,23 +284,23 @@ class LauncherService:
     def _parent_process(self) -> str | None:
         return REPARENT_PROCESS if prefs.load().get("reparent_glyph") else None
 
-    # --- estado para la interfaz --------------------------------------------
+    # --- state for the interface --------------------------------------------
 
     def _account_state(self, email: str, instance: dict | None) -> dict:
-        """Estado de una cuenta: ``{"status", "detail"}``.
+        """An account's state: ``{"status", "detail"}``.
 
-        Los estados posibles, de más a menos concreto:
+        The possible states, most to least specific:
 
-        ``running``   el juego está abierto y sabemos con qué pid.
-        ``launching`` / ``checking``  hay una operación en vuelo.
-        ``failed``    el último intento de esta sesión falló; ``detail`` explica por qué.
-        ``ready``     comprobado en esta sesión: la cuenta entra.
-        ``pending``   faltan datos (ni contraseña guardada ni ticket en caché).
-        ``unknown``   tiene credenciales, pero aún no lo hemos comprobado.
+        ``running``   the game is open and we know its pid.
+        ``launching`` / ``checking``  an operation is in flight.
+        ``failed``    this session's last attempt failed; ``detail`` says why.
+        ``ready``     verified this session: the account signs in.
+        ``pending``   data missing (no saved password and no cached ticket).
+        ``unknown``   it has credentials, but we have not checked them yet.
 
-        La diferencia entre ``unknown`` y ``ready`` es a propósito: tener una
-        contraseña guardada no prueba que Trion la acepte, así que no pintamos
-        verde hasta haberlo verificado de verdad.
+        The difference between ``unknown`` and ``ready`` is deliberate: having a
+        saved password does not prove Trion accepts it, so nothing goes green
+        until it has actually been verified.
         """
         key = email.lower()
         with self._launch_lock:
@@ -334,6 +332,11 @@ class LauncherService:
         self._last_result[email.lower()] = {"ok": ok, "detail": detail}
 
     def state(self) -> dict:
+        # Anything that happened before there was a window to say it in. The
+        # buffer empties itself, so this reports only once.
+        for message in paths_mod.drain_notes():
+            self.emit("app", "log", message=message)
+
         data = prefs.load()
         running = self.running_list()
         by_email = {i["email"].lower(): i for i in running}
@@ -358,7 +361,6 @@ class LauncherService:
             "groups": prefs.groups(),
             "accounts": accounts,
             "installs": self.install_list(),
-            "regions": list(prefs.REGIONS),
             "game_path": data.get("game_path", ""),
             "pts_game_path": data.get("pts_game_path", ""),
             "hide_emails": bool(data.get("hide_emails", True)),
@@ -370,20 +372,17 @@ class LauncherService:
             "reparent_glyph": bool(data.get("reparent_glyph", False)),
             "folders": self._folders(data),
             "versions": self._versions(data),
-            # Con qué se lanza aquí y dónde se guardan los secretos: la
-            # interfaz lo necesita para explicar por qué algo no se puede.
+            # What launches here and where secrets are kept: the interface
+            # needs it to explain why something is not possible.
             "host": self._host().status(),
             "vault": vault_mod.status(),
-            "busy": self.busy,
-            "busy_op": self._busy_op,
-            "running": running,
         }
 
     def _folders(self, data: dict) -> list[dict]:
-        """Rutas que la interfaz muestra en Ajustes -> Folders.
+        """The paths the interface shows under Settings -> Folders.
 
-        Sólo lectura: abrirlas sigue siendo cosa de ``open_folder``. Se listan
-        aunque no existan todavía para que el usuario vea dónde van a estar.
+        Read-only: opening them is still ``open_folder``'s job. They are listed
+        even when they do not exist yet so the user can see where they will be.
         """
         pts = data.get("pts_game_path", "")
         if not pts:
@@ -400,7 +399,7 @@ class LauncherService:
         return [f for f in out if f["path"]]
 
     def _versions(self, data: dict) -> dict:
-        """Versión aplicada localmente por rama, para la vista de mantenimiento."""
+        """The version applied locally per branch, for the maintenance view."""
         versions: dict[str, str | None] = {}
         for branch, raw in (("live-us", data.get("game_path")),
                             ("pts", data.get("pts_game_path"))):
@@ -420,14 +419,14 @@ class LauncherService:
                 versions[branch] = None
         return versions
 
-    # --- comprobar / actualizar / reparar -----------------------------------
+    # --- check / update / repair -----------------------------------
 
     def _run_sync(self, op: str, game_dir: Path, branch: str, *, adopt: bool,
                   reset: bool, emit_done: bool = True, email: str = "") -> dict:
-        """Cuerpo común de actualizar (adoptar) y reparar (borrar estado y
-        redescargar). Con ``emit_done=False`` no emitimos el evento final: se usa
-        cuando esta sincronización es sólo la *fase* de actualización de un
-        lanzamiento, para que la UI no crea que el Play entero ha terminado.
+        """The shared body of update (adopt) and repair (wipe state and
+        re-download). With ``emit_done=False`` the final event is not emitted:
+        that is used when this sync is merely the update *phase* of a launch, so
+        the UI does not think the whole Play has finished.
         """
         self.emit(op, "starting", email=email,
                   message="Contacting the update server...")
@@ -494,8 +493,8 @@ class LauncherService:
     # --- 2FA ----------------------------------------------------------------
 
     def _token_provider(self, email: str, op: str = "play"):
-        """Lo que TrionAuth llama cuando el servidor exige un código de 2 pasos:
-        avisa a la interfaz y bloquea ESA operación hasta que llega el código."""
+        """What TrionAuth calls when the server demands a two-step code: it
+        tells the interface and blocks THAT operation until the code arrives."""
         def _provider() -> str:
             pending: queue.Queue = queue.Queue()
             with self._2fa_lock:
@@ -511,10 +510,10 @@ class LauncherService:
             return str(code).strip()
         return _provider
 
-    # --- ocupación por cuenta ----------------------------------------------
+    # --- per-account busy flag ----------------------------------------------
 
     def _claim_account(self, email: str, what: str) -> str | None:
-        """Marca la cuenta como ocupada. Devuelve el motivo si ya lo estaba."""
+        """Marks the account busy. Returns the reason if it already was."""
         with self._launch_lock:
             current = self._account_busy.get(email.lower())
             if current:
@@ -541,13 +540,13 @@ class LauncherService:
             pending.put(_CANCEL_2FA)
         return {"ok": True}
 
-    # --- seguimiento de procesos lanzados + auto-relog ----------------------
+    # --- tracking launched processes + auto-relog ----------------------
 
     def _tracked_pids(self) -> set[int]:
-        """Pids de partidas que ya seguimos. Se excluyen al resolver el proceso
-        de un lanzamiento nuevo: si dos cuentas arrancan a la vez y una tiene que
-        recurrir al último recurso ('cualquier Trove nuevo'), sin esto podría
-        adjudicarse la partida de la otra."""
+        """Pids of sessions we already track. They are excluded when resolving a
+        new launch's process: if two accounts start at once and one has to fall
+        back to the last resort ("any new Trove"), without this it could claim
+        the other's session."""
         with self._launch_lock:
             return set(self._launches)
 
@@ -566,19 +565,22 @@ class LauncherService:
         } for i in items]
 
     def _emit_running(self) -> None:
-        self.emit("running", "update", instances=self.running_list())
+        # No body: the interface answers by asking for the whole state, which
+        # is where what it paints comes from. Sending the list here meant
+        # sending it twice.
+        self.emit("running", "update")
 
     def _host(self) -> "gamehost.GameHost":
-        """Quien sabe lanzar en este equipo: Windows directo, o Wine."""
+        """Whoever knows how to launch here: Windows directly, or Wine."""
         return gamehost.host(log=self._log)
 
     def _track_launch(self, pid: int, info: dict) -> int:
-        """Apunta una partida y ponle un vigilante. Devuelve su pid.
+        """Records a session and puts a watcher on it. Returns its pid.
 
-        Si ese pid ya es de otra cuenta, no lo pisamos: significa que la
-        resolución se equivocó y quedarnos con el último dejaría una partida sin
-        vigilar y la fila de la otra cuenta con el nombre cambiado. Preferimos
-        que ESTA cuenta falle y lo diga.
+        If that pid already belongs to another account we do not overwrite it:
+        that would mean the resolution got it wrong, and keeping the latest would
+        leave one session unwatched and the other account's card under the wrong
+        name. We would rather THIS account failed and said so.
         """
         info = dict(info)
         info["pid"] = pid
@@ -599,22 +601,22 @@ class LauncherService:
 
     def _spawn_game(self, exe: Path, ticket: str, auth_server: str, info: dict,
                     *, log=print) -> int:
-        """Arranca el juego y apunta la partida. DE UNA EN UNA.
+        """Starts the game and records the session. ONE AT A TIME.
 
-        Con el loader del anti-cheat por medio no lanzamos el juego, lanzamos al
-        loader; el proceso del juego hay que salir a buscarlo después, y lo único
-        que lo distingue es que antes no estaba. Dos cuentas arrancando a la vez
-        miran la misma lista y pueden quedarse con el mismo Trove: una partida se
-        queda sin vigilar y la otra aparece con el nombre de la vecina —que es
-        justo lo que pasaba al pulsar «Launch all».
+        With the anti-cheat loader in the way we do not launch the game, we
+        launch the loader; the game's process has to be hunted down afterwards,
+        and the only thing that distinguishes it is that it was not there before.
+        Two accounts starting at once look at the same list and can settle on the
+        same Trove: one session goes unwatched and the other shows up under its
+        neighbour's name - which is exactly what pressing "Launch all" did.
 
-        Y el turno no se suelta al arrancar, sino cuando esa partida está EN PIE.
-        Lanzar la siguiente mientras la anterior todavía se levanta es lo que
-        hace que el loader se caiga sin llegar a lanzar nada (código 1021, por
-        ejemplo) y que su cuenta acabe adoptando la partida de la vecina.
+        And the turn is not released on start, but when that session is UP.
+        Launching the next while the previous one is still coming up is what
+        makes the loader fall over without launching anything (exit code 1021,
+        for one) and its account end up adopting the neighbour's session.
 
-        Lo caro —actualizar, autenticar, esperar el 2FA— queda fuera y sigue
-        haciéndose en paralelo: lo que va en fila es el arranque.
+        The expensive part - updating, authenticating, waiting for 2FA - stays
+        outside and still happens in parallel: what queues up is the start.
         """
         host = self._host()
         with self._spawn_gate:
@@ -627,27 +629,28 @@ class LauncherService:
                     parent_process_name=self._parent_process() or "",
                     exclude=self._tracked_pids(), log=log)
             except Exception:
-                # Un arranque fallido también cuenta para el respiro: si el
-                # loader acaba de caerse, encadenar el siguiente al instante es
-                # la mejor forma de que se caiga otra vez.
+                # A failed start counts towards the gap too: if the loader has
+                # just fallen over, chaining the next one instantly is the best
+                # way to make it fall over again.
                 self._last_spawn_at = time.monotonic()
                 raise
-            # Apuntarla DENTRO del cerrojo: el siguiente lanzamiento tiene que
-            # ver este pid en su lista de exclusión.
+            # Record it INSIDE the lock: the next launch has to see this pid in
+            # its exclusion list.
             self._track_launch(pid, info)
             if not host.wait_until_ready(pid, _LAUNCH_READY_TIMEOUT, log=log):
                 log(f"[play] the game (pid {pid}) closed while it was starting")
-            # El respiro se cuenta desde que está levantada, no desde que se
-            # ejecutó: es lo que se le concede al anti-cheat para asentarse.
+            # The gap counts from when it is up, not from when it was executed:
+            # that is what the anti-cheat is given to settle.
             self._last_spawn_at = time.monotonic()
             return pid
 
     def _sync_for_play(self, game_dir: Path, branch: str, email: str) -> None:
-        """La fase de actualización de un lanzamiento, una por carpeta.
+        """The update phase of a launch, one per folder.
 
-        Lanzar un grupo entero son N lanzamientos sobre la MISMA instalación: sin
-        esto, N updaters bajando y escribiendo los mismos archivos a la vez. El
-        primero actualiza y los demás esperan; si acaba de hacerse, ni eso.
+        Launching a whole group is N launches over the SAME installation:
+        without this, N updaters downloading and writing the same files at once.
+        The first updates and the rest wait; if it has just been done, not even
+        that.
         """
         key = str(game_dir)
         with self._dir_guard:
@@ -665,11 +668,11 @@ class LauncherService:
             self._dir_synced[key] = time.monotonic()
 
     def stop(self, pid: int) -> dict:
-        """Cierra el juego de una instancia lanzada por nosotros.
+        """Closes the game for an instance we launched.
 
-        El pid se apunta en ``_stopping`` ANTES de matarlo: si no, el monitor
-        vería una salida con código distinto de 0 y el auto-relog lo volvería a
-        levantar justo después de que el usuario pidiera cerrarlo.
+        The pid is recorded in ``_stopping`` BEFORE killing it: otherwise the
+        monitor would see a non-zero exit and the auto-relog would bring it back
+        up right after the user asked to close it.
         """
         pid = int(pid)
         with self._launch_lock:
@@ -685,17 +688,18 @@ class LauncherService:
         return {"ok": True, "pid": pid}
 
     def _close_crash_handler(self, game_pid: int) -> None:
-        """Cierra el reportador de fallos que deja el juego al caerse.
+        """Closes the crash reporter the game leaves behind when it falls over.
 
-        Cuando Trove se cae abre su ventana de «envíanos el informe» y ahí se
-        queda. Con auto-relog eso significa una ventana más por cada caída, hasta
-        llenar la pantalla de diálogos de partidas que ya no existen.
+        When Trove crashes it opens its "send us the report" window and sits
+        there. With auto-relog that means one more window per crash, until the
+        screen fills with dialogs for sessions that no longer exist.
 
-        No sabemos cómo se llama el ejecutable en todas las instalaciones, así
-        que se busca por la pista del nombre y se exige además que sea de ESTA
-        muerte: o es hijo del proceso que acaba de morir, o ha aparecido después
-        de morir él. Lo que ya estuviera abierto no se toca —puede ser de otra
-        cuenta, o del usuario— y por eso la foto se hace aquí y no al lanzar.
+        We do not know what the executable is called across every installation,
+        so it is found by the name hint and additionally required to belong to
+        THIS death: either it is a child of the process that just died, or it
+        appeared after it died. Anything already open is left alone - it may be
+        another account's, or the user's - which is why the snapshot is taken
+        here and not at launch time.
         """
         host = self._host()
         try:
@@ -733,9 +737,10 @@ class LauncherService:
         uptime = time.time() - info["started_at"]
         who = prefs.display_name(info["email"])
 
-        # Lo primero, quitar de en medio el diálogo del crash: da igual si luego
-        # volvemos a entrar o no, esa ventana no pinta nada ahí. Va en su propio
-        # hilo porque espera a que aparezca y no queremos retrasar el relog.
+        # First, get the crash dialog out of the way: whether or not we sign
+        # back in afterwards, that window has no business being there. It goes on
+        # its own thread because it waits for it to appear and we do not want to
+        # delay the relog.
         threading.Thread(target=self._close_crash_handler, args=(pid,),
                          daemon=True, name=f"trove-crash-{pid}").start()
 
@@ -746,17 +751,17 @@ class LauncherService:
             self._emit_running()
             return
 
-        # Se vuelve a entrar se haya cerrado como se haya cerrado: un crash y una
-        # expulsión por inactividad son lo mismo visto desde aquí (la segunda, de
-        # hecho, cierra el juego limpiamente), y quien enciende el auto-relog lo
-        # que quiere es que la cuenta siga dentro. Lo único que no se relanza es
-        # lo que cerró el usuario —eso ya se ha atendido arriba— y lo que se
-        # muere enseguida, para no encadenar arranques fallidos.
+        # We sign back in however it closed: a crash and an idle kick are the
+        # same thing seen from here (the second one, in fact, closes the game
+        # cleanly), and whoever turns auto-relog on wants the account to stay in.
+        # The only things not relaunched are what the user closed - handled above
+        # - and what dies straight away, so failed starts do not chain.
         should_relog = bool(info.get("auto_relog")) and uptime >= _MIN_UPTIME_FOR_RELOG
 
         if should_relog and code is None and self._still_running(pid):
-            # No sabemos el código de salida y el proceso sigue en la lista: la
-            # espera falló, el juego no. Relanzar aquí sería duplicar la partida.
+            # We do not know the exit code and the process is still in the
+            # list: the wait failed, the game did not. Relaunching here would
+            # duplicate the session.
             self._log(f"[relog] cannot watch pid {pid} any more, but it is still "
                       f"running; not relogging")
             should_relog = False
@@ -789,11 +794,11 @@ class LauncherService:
 
     def _relaunch(self, info: dict) -> None:
         from . import launch as launch_mod
-        time.sleep(3.0)  # deja que el anti-cheat y el servicio se asienten
+        time.sleep(3.0)  # let the anti-cheat and the service settle
         creds = prefs.load_credentials(info["email"])
         password = creds.get("password", "") if creds else ""
         auth = self._make_auth(info["email"], password)
-        # Sin token_provider: un relog en segundo plano no puede pedir el 2FA.
+        # No token_provider: a background relog cannot ask for the 2FA code.
         ticket = auth.get_ticket()
         exe = self._resolve_exe(Path(info["game_path"]))
         new_info = dict(info)
@@ -806,16 +811,16 @@ class LauncherService:
                   message=f"{prefs.display_name(info['email'])} signed back in (pid {pid}).")
 
     def set_auto_relog(self, email: str, enabled: bool = True) -> dict:
-        """Activa o desactiva el auto-relog de UNA cuenta.
+        """Turns auto-relog on or off for ONE account.
 
-        Se guarda en la cuenta y, si esa cuenta tiene una partida abierta, se
-        aplica también a la instancia viva: cambiar la opción con el juego ya
-        lanzado debe surtir efecto en ese mismo lanzamiento, no en el siguiente.
+        It is saved on the account and, if that account has a game open, applied
+        to the live instance too: changing the option with the game already
+        running must take effect on that same launch, not the next one.
         """
         enabled = bool(enabled)
-        # Comprobar ANTES de escribir: upsert_account crea la cuenta si no la
-        # encuentra, así que sin esto un email desconocido daría de alta una
-        # cuenta fantasma en lugar de fallar.
+        # Check BEFORE writing: upsert_account creates the account if it cannot
+        # find it, so without this an unknown email would register a phantom
+        # account instead of failing.
         if prefs.get_account(email) is None:
             return {"ok": False, "error": "That account does not exist."}
         account = prefs.upsert_account(email, auto_relog=enabled)
@@ -828,11 +833,11 @@ class LauncherService:
         self._emit_running()
         return {"ok": True, "auto_relog": enabled}
 
-    # --- jugar --------------------------------------------------------------
+    # --- playing --------------------------------------------------------------
 
     def play(self, email: str, password: str = "", update_first: bool | None = None,
              remember_password: bool | None = None) -> dict:
-        """Lanza UNA cuenta. Varias pueden estar lanzándose a la vez."""
+        """Launches ONE account. Several can be launching at once."""
         email = (email or "").strip()
         account = prefs.get_account(email)
         if account is None:
@@ -843,8 +848,8 @@ class LauncherService:
             region = prefs.DEFAULT_REGION
         branch, _kind = REGION_BRANCH[region]
         try:
-            # Se valida antes de arrancar el hilo, y el fallo se registra para que
-            # la fila pase a "Failed" con el motivo en vez de morir en silencio.
+            # Validated before starting the thread, and the failure recorded so
+            # the card turns "Failed" with the reason instead of dying quietly.
             game_dir = self._resolve_game_dir(region)
         except Exception as exc:
             self._record_result(email, False, str(exc))
@@ -854,7 +859,7 @@ class LauncherService:
         do_update = data.get("update_first", True) if update_first is None else bool(update_first)
         do_remember = (data.get("remember_password", True)
                        if remember_password is None else bool(remember_password))
-        # Por cuenta, no global: cada una decide si debe volver a entrar sola.
+        # Per account, not global: each decides whether it signs back in itself.
         auto_relog = bool(account.get("auto_relog", False))
 
         busy = self._claim_account(email, "launching")
@@ -867,7 +872,7 @@ class LauncherService:
             from . import launch as launch_mod
 
             use_password = password
-            if not use_password:  # sin contraseña escrita, tiramos de la guardada
+            if not use_password:  # nothing typed, fall back to the saved one
                 creds = prefs.load_credentials(email)
                 if creds:
                     use_password = creds.get("password", "")
@@ -897,10 +902,10 @@ class LauncherService:
                  "branch": branch, "auto_relog": auto_relog},
                 log=self._logger("play", email))
 
-            # El launcher no toca la ventana del juego: ni la trae al frente, ni
-            # la restaura, ni la enumera. Nada de lo que hacemos aquí necesita
-            # hablar con las ventanas de otro proceso, y no vamos a mover el
-            # ratón ni el foco de quien esté jugando para ahorrarle un alt-tab.
+            # The launcher never touches the game's window: it does not bring
+            # it forward, restore it or enumerate it. Nothing we do here needs to
+            # talk to another process's windows, and we are not moving the mouse
+            # or the focus of whoever is playing to save them an alt-tab.
             self._record_result(email, True, f"Launched OK (pid {pid}).")
             self.emit("play", "launched", done=True, ok=True, pid=pid, email=email,
                       message=f"{who} launched (pid {pid}).")
@@ -919,16 +924,16 @@ class LauncherService:
         threading.Thread(target=_run, daemon=True, name=f"trove-play-{email}").start()
         return {"started": True}
 
-    # --- comprobar el inicio de sesión --------------------------------------
+    # --- checking the sign-in --------------------------------------
 
     def test_login(self, email: str, password: str = "",
                    remember_password: bool | None = None) -> dict:
-        """Autentica contra Trion SIN lanzar el juego.
+        """Authenticates against Trion WITHOUT launching the game.
 
-        Sirve para saber si una cuenta entra antes de darle a jugar, y deja el
-        ticket en la caché, así que un lanzamiento posterior ya no vuelve a pedir
-        credenciales. No toca la instalación: se puede comprobar una cuenta
-        aunque el juego no esté descargado.
+        It answers whether an account signs in before pressing play, and leaves
+        the ticket in the cache, so a later launch does not ask for credentials
+        again. It does not touch the installation: an account can be checked
+        even when the game is not downloaded.
         """
         email = (email or "").strip()
         if prefs.get_account(email) is None:
@@ -975,7 +980,7 @@ class LauncherService:
         threading.Thread(target=_run, daemon=True, name=f"trove-test-{email}").start()
         return {"started": True}
 
-    # --- cuentas ------------------------------------------------------------
+    # --- accounts ------------------------------------------------------------
 
     def add_account(self, email: str, password: str = "", name: str = "",
                     region: str = "", group: str = "",
@@ -994,8 +999,8 @@ class LauncherService:
         return {"ok": True, "account": account}
 
     def update_account(self, email: str, **fields) -> dict:
-        # Igual que en set_auto_relog: upsert crea si no existe, y editar una
-        # cuenta que no está no debe darla de alta.
+        # Same as in set_auto_relog: upsert creates when missing, and editing an
+        # account that is not there must not register it.
         if prefs.get_account(email) is None:
             return {"ok": False, "error": "That account does not exist."}
         account = prefs.upsert_account(email, **fields)
@@ -1008,7 +1013,7 @@ class LauncherService:
         return {"ok": True}
 
     def logout(self, email: str) -> dict:
-        """Olvida el ticket cacheado y la contraseña, pero mantiene la cuenta."""
+        """Forgets the cached ticket and the password, but keeps the account."""
         try:
             self._make_auth(email, "").logout()
         except Exception as exc:
@@ -1026,7 +1031,7 @@ class LauncherService:
                     "error": "DPAPI is unavailable: the password was not saved."}
         return {"ok": True, "has_saved_password": True}
 
-    # --- grupos -------------------------------------------------------------
+    # --- groups -------------------------------------------------------------
 
     def create_group(self, name: str = "") -> dict:
         return {"ok": True, "group": prefs.create_group(name)}
@@ -1048,7 +1053,7 @@ class LauncherService:
             prefs.reorder_accounts(accounts)
         return {"ok": True}
 
-    # --- instalaciones y carpetas -------------------------------------------
+    # --- installations and folders -------------------------------------------
 
     def set_install(self, path: str, kind: str = "live") -> dict:
         path = (path or "").strip()
@@ -1107,10 +1112,11 @@ class LauncherService:
         return {"ok": True}
 
 
-# --- utilidades de proceso -------------------------------------------------
+# --- process helpers -------------------------------------------------
 
-# Lanzar, esperar y cerrar viven en ``gamehost``: en Windows son llamadas Win32
-# directas y en Linux van al ayudante que corre dentro del prefijo de Wine.
+# Launching, waiting and closing live in ``gamehost``: on Windows they are
+# direct Win32 calls, on Linux they go to the helper running inside the Wine
+# prefix.
 
 
 def _open_in_file_manager(target: Path) -> None:

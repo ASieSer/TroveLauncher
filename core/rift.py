@@ -1,12 +1,12 @@
-"""El blob del ticket: RC4 + cabecera "RIFT".
+"""The ticket blob: RC4 plus a "RIFT" header.
 
-Vivía dentro de ``inject.py``, que sólo se puede importar en Windows. Sacarlo
-aquí tiene dos motivos: lo usan los dos caminos —el de Windows y el ayudante de
-Wine, que lo reimplementa en C— y así se puede comparar una implementación con
-la otra en una prueba (``tools/test_wine_helper.py``), en lugar de confiar en
-que dos códigos separados hagan lo mismo.
+This used to live inside ``inject.py``, which can only be imported on Windows.
+It sits on its own here because both launch paths need it: the Windows one
+imports this module, and the Wine helper reimplements it in C
+(``native/troveinject.c``). Keeping it apart and free of platform calls is what
+makes the two versions easy to read side by side and keep in step.
 
-Es código puro: no toca Windows ni el disco.
+Pure code: it touches neither Windows nor the disk.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from __future__ import annotations
 import secrets
 import struct
 
-RIFT_MAGIC = b"\x54\x46\x49\x52"  # 'TFIR' bytes == "RIFT" leído como uint32 LE
+RIFT_MAGIC = b"\x54\x46\x49\x52"  # 'TFIR' bytes == "RIFT" read as a little-endian uint32
 
 
 def rc4(key: bytes, data: bytes) -> bytes:
@@ -34,11 +34,11 @@ def rc4(key: bytes, data: bytes) -> bytes:
 
 
 def clean_ticket(ticket: str) -> str:
-    """El ticket tal y como viaja dentro del blob.
+    """The ticket exactly as it travels inside the blob.
 
-    El servidor antepone una línea con el número de bytes; el juego espera el
-    documento a partir de ``Signature:`` o de ``<?xml``. El ayudante en C aplica
-    esta misma regla, y la prueba compara los dos resultados.
+    The server prefixes a line with the byte count; the game expects the
+    document from ``Signature:`` or ``<?xml`` onwards. The C helper applies this
+    same rule, and the test compares the two results.
     """
     lines = ticket.replace("\r", "").split("\n")
     start = next((i for i, ln in enumerate(lines)

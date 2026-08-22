@@ -1,5 +1,5 @@
-/* Comfortaa (Google Fonts, SIL Open Font License 1.1) servida en local:
-   la app carga desde file:// y no puede depender de que haya internet. */
+/* Comfortaa (Google Fonts, SIL Open Font License 1.1) served locally: the app
+   loads over file:// and cannot depend on there being internet. */
 /* cyrillic-ext */
 @font-face {
   font-family: 'Comfortaa';

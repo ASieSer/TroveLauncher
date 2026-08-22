@@ -1,12 +1,12 @@
-"""Machine-y launch bits: the per-region auth-server `-C` string.
+"""The per-region auth-server `-C` string handed to the game.
 
-Trimmed from TroveImposter/utils/trove_launch.py — the mod / Trove.cfg merging
-that lived here is intentionally omitted, because Better Trove Tools' own Mod
-Manager owns that side. The ticket->running-game glue lives in the caller
-(backend/trove.py), which mints via ``trionauth`` and spawns via ``inject``.
+Trimmed from BetterTroveTools' TroveImposter/utils/trove_launch.py — the mod /
+Trove.cfg merging that lived alongside it is deliberately left out, since this
+launcher does not manage mods. The ticket -> running-game glue lives in
+``service.py``, which mints via ``trionauth`` and spawns via ``gamehost``.
 
 Nothing here touches other processes' windows: the launcher never moves,
-restores or foregrounds the game. See the note in ``service.py``.
+restores or foregrounds the game.
 """
 
 from __future__ import annotations

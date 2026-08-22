@@ -2,30 +2,32 @@
 @import url("../fonts/comfortaa.css");
 @import url("../fonts/quantico.css");
 
-/* Trove Accounts Hub — tema oscuro plano, sobrio, de aire técnico.
+/* Trove Accounts Hub - a flat, sober, technical dark theme.
  *
- * Reglas del diseño:
+ * Design rules:
  *
- *   1. El acento tiñe el fondo de TODA la ventana, en un porcentaje bajo: se
- *      busca una temperatura de color común, no un color. Encima, dos halos
- *      muy difusos dan profundidad sin crear manchas.
- *   2. Fuera del fondo, el acento aparece sólo donde significa algo: la acción
- *      principal, un estado activo, el foco de un campo. Nunca como adorno.
- *   3. Separación por líneas de 1px, no por sombras ni cristal.
- *   4. Radios pequeños. Etiquetas en versalitas con tracking.
+ *   1. The accent tints the background of the WHOLE window, at a low
+ *      percentage: what is wanted is a shared colour temperature, not a colour.
+ *      On top, two very diffuse glows give depth without creating blotches.
+ *   2. Away from the background, the accent appears only where it means
+ *      something: the primary action, an active state, a focused field. Never
+ *      as decoration.
+ *   3. Separation by 1px lines, not by shadows or glass.
+ *   4. Small radii. Labels in small caps with tracking.
  *
- * El color de acento sigue siendo configurable (--accent); al ser el único
- * color vivo de la interfaz, cambiarlo la retiñe entera sin ensuciar nada.
+ * The accent colour stays configurable (--accent); being the only live colour
+ * in the interface, changing it re-tints the whole thing without muddying
+ * anything.
  */
 
 :root {
     --accent: #22c55e;
 
-    /* El acento tiñe TODAS las superficies, no sólo un halo arriba: la ventana
-       entera comparte la misma temperatura de color. Los porcentajes son bajos a
-       propósito — se busca un tono, no un color. */
-    /* --tint (0..1) escala cuánto acento entra en cada superficie. Los valores
-       base son casi negros, así que a tinte 0 la interfaz queda gris neutra. */
+    /* The accent tints EVERY surface, not just a glow at the top: the whole
+       window shares one colour temperature. The percentages are low on
+       purpose - a tone is wanted, not a colour. */
+    /* --tint (0..1) scales how much accent goes into each surface. The base
+       values are nearly black, so at tint 0 the interface is neutral grey. */
     --tint: .45;
 
     --bg: color-mix(in srgb, var(--accent) calc(var(--tint) * 9%), #040507);
@@ -44,23 +46,24 @@
     --ok: #22c55e;
     --warn: #eab308;
     --danger: #ef4444;
-    /* «Comprobada, pero no jugando». Aparte del verde de RUNNING a propósito:
-       son dos estados distintos y con el mismo color no se distinguirían de un
-       vistazo. Y aparte del acento, que lo elige el usuario: un estado no puede
-       depender de que hoy toque morado. */
+    /* "Verified, but not playing". Deliberately apart from RUNNING's green:
+       they are two different states and one colour would not tell them apart at
+       a glance. And apart from the accent, which the user picks: a state cannot
+       depend on today happening to be purple. */
     --info: #38bdf8;
 
     --r: 5px;
     --r-md: 7px;
 
-    /* Una sola familia para toda la interfaz; el JS cambia esta variable.
-       La monoespaciada queda reservada al registro, donde alinear importa. */
+    /* One family for the whole interface; the JS changes this variable.
+       The monospaced one is reserved for the log, where alignment matters. */
     --font: "Segoe UI", system-ui, -apple-system, sans-serif;
-    /* Texto sobre el relleno de acento: lo calcula el JS según la luminancia,
-       porque con acentos claros el blanco no se lee. */
+    /* Text over the accent fill: the JS works it out from the luminance,
+       because white does not read on light accents. */
     --on-accent: #ffffff;
-    /* El acento cuando se escribe con él en vez de rellenar: lo calcula el JS
-       (readableAccent), que lo aclara si el color elegido no se leería. */
+    /* The accent when written with rather than filled with: the JS works it
+       out (readableAccent), lightening it if the chosen colour would not
+       read. */
     --accent-text: var(--accent);
     --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
@@ -82,9 +85,9 @@ html, body {
 
 body { display: flex; flex-direction: column; position: relative; }
 
-/* Halos de profundidad, arriba y abajo. Van sobre un fondo que YA está teñido,
-   así que sólo modulan la intensidad: sin el de abajo quedaba una banda muerta
-   en la mitad inferior de la ventana. */
+/* Depth glows, top and bottom. They sit over a background that is ALREADY
+   tinted, so they only modulate the intensity: without the bottom one there was
+   a dead band across the lower half of the window. */
 body::before {
     content: "";
     position: fixed;
@@ -98,8 +101,8 @@ body::before {
             color-mix(in srgb, var(--accent) calc(var(--tint) * 12%), transparent), transparent 72%);
 }
 
-/* Capa de partículas: el patrón lo genera el JS una sola vez (ver makeStarfield)
-   y se puede apagar desde Ajustes. */
+/* Particle layer: the JS generates the pattern once (see makeStarfield) and
+   it can be switched off from Settings. */
 body::after {
     content: "";
     position: fixed;
@@ -116,8 +119,8 @@ body > * { position: relative; z-index: 1; }
 
 .hidden { display: none !important; }
 
-/* Etiqueta técnica: versalitas espaciadas, el recurso tipográfico que da el
-   tono del conjunto sin necesidad de más color. */
+/* Technical label: spaced small caps, the typographic device that sets the
+   tone of the whole without needing more colour. */
 .label {
     font-size: 10px;
     font-weight: 600;
@@ -126,12 +129,12 @@ body > * { position: relative; z-index: 1; }
     color: var(--text-faint);
 }
 
-/* --- cabecera de la app -------------------------------------------------- */
+/* --- app header ---------------------------------------------------------- */
 
 .appbar {
     flex: none;
-    /* Un poco más alta que una barra de título al uso: los rótulos de club son
-       apaisados y por debajo de ~30px de alto dejan de leerse. */
+    /* A little taller than a usual title bar: the club wordmarks are wide and
+       stop reading below about 30px of height. */
     height: 48px;
     display: flex;
     align-items: center;
@@ -142,10 +145,10 @@ body > * { position: relative; z-index: 1; }
 }
 .brand { display: flex; align-items: center; min-width: 0; }
 
-/* Logo propio: el PNG/SVG va como MÁSCARA, no como imagen, para que lo que se
-   vea sea el fondo —el acento— y el logo se retiña con el resto de la interfaz
-   (mismo recurso que usa el botón de lanzar todo el grupo). La proporción sale
-   del viewBox del SVG, así que basta con fijar el alto. */
+/* Own logo: the PNG/SVG goes in as a MASK, not as an image, so what is seen
+   is the background - the accent - and the logo re-tints with the rest of the
+   interface (the same device the group's launch-all button uses). The aspect
+   ratio comes from the SVG's viewBox, so setting the height is enough. */
 .brand-lockup {
     display: block;
     height: 26px;
@@ -155,9 +158,9 @@ body > * { position: relative; z-index: 1; }
     -webkit-mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
     mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
 }
-/* El logo de un club es arte suyo y va a todo color: se escala por alto y
-   respeta su proporción, que en los tres es muy distinta (dos rótulos
-   apaisados, un retrato casi cuadrado). */
+/* A club's logo is its own artwork and goes in full colour: it is scaled by
+   height and keeps its aspect ratio, which across the three is very different
+   (two wide wordmarks, one nearly square portrait). */
 .brand-logo {
     display: block;
     height: 30px;
@@ -167,7 +170,7 @@ body > * { position: relative; z-index: 1; }
     flex: none;
 }
 
-/* --- barra de acciones --------------------------------------------------- */
+/* --- action bar ---------------------------------------------------------- */
 
 .toolbar {
     flex: none;
@@ -184,9 +187,9 @@ body > * { position: relative; z-index: 1; }
     margin: 0 auto;
     position: relative;
 }
-/* Doble clase a propósito: el bloque genérico de `input` está más abajo en la
-   hoja y, con la misma especificidad, ganaba por orden y aplastaba el hueco
-   reservado para la lupa. */
+/* Two classes on purpose: the generic `input` block sits further down the
+   sheet and, at equal specificity, won on order and flattened the space
+   reserved for the magnifier. */
 .search input[type="text"] {
     width: 100%;
     padding: 7px 11px 7px 31px;
@@ -216,13 +219,13 @@ body > * { position: relative; z-index: 1; }
 .counts b { color: var(--text-dim); font-weight: 600; }
 .counts .live { color: var(--accent); }
 
-/* --- tablero ------------------------------------------------------------- */
+/* --- board --------------------------------------------------------------- */
 
 .board { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 .board-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
-/* --- cabecera de grupo --------------------------------------------------- */
+/* --- group header -------------------------------------------------------- */
 
 .group-head {
     display: flex;
@@ -259,10 +262,10 @@ body > * { position: relative; z-index: 1; }
 }
 .more-row:hover { color: var(--text-dim); background: var(--surface); }
 
-/* --- servidor: recuadro pulsable ----------------------------------------- */
+/* --- server: clickable box ----------------------------------------------- */
 
-/* Mismo tratamiento que el badge de estado: recuadro, versalitas y borde, para
-   que los dos datos de la tarjeta rimen. */
+/* Same treatment as the status badge: box, small caps and border, so the
+   card's two data points rhyme. */
 .server-cell {
     display: inline-flex;
     align-items: center;
@@ -275,12 +278,13 @@ body > * { position: relative; z-index: 1; }
     font-family: inherit;
     font-size: 10px;
     font-weight: 700;
-    /* line-height 1 ajusta la caja de línea al texto: con `normal` reserva sitio
-       para descendientes que en mayúsculas no existen, y el conjunto se ve alto. */
+    /* line-height 1 fits the line box to the text: with `normal` it reserves
+       room for descenders that uppercase does not have, and the whole thing
+       looks tall. */
     line-height: 1;
     letter-spacing: 1px;
-    /* El tracking añade separación TRAS la última letra; este padding la
-       compensa para que el texto quede óptimamente centrado. */
+    /* Tracking adds space AFTER the last letter; this padding compensates
+       for it so the text is optically centred. */
     text-indent: 1px;
     text-transform: uppercase;
     color: var(--text-dim);
@@ -290,7 +294,7 @@ body > * { position: relative; z-index: 1; }
 }
 .server-cell:hover { border-color: var(--text-faint); color: var(--text); }
 
-/* --- estado: etiqueta con borde ------------------------------------------ */
+/* --- status: bordered label ---------------------------------------------- */
 
 .badge {
     display: inline-flex;
@@ -313,13 +317,13 @@ body > * { position: relative; z-index: 1; }
     cursor: default;
 }
 .badge .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
-/* Centrado óptico del texto en versalitas, resuelto por el motor.
-   `text-box: trim-both cap alphabetic` recorta el hueco que la fuente reserva
-   por encima de las mayúsculas y por debajo de la línea base, así que la caja
-   del texto pasa a ceñirse a los glifos y align-items:center los centra de
-   verdad. Funciona con cualquier familia, que es justo lo que fallaba al
-   compensar con una cifra fija: cada fuente coloca la base a distinta altura.
-   Sin soporte, el texto sólo queda como antes: nada se rompe. */
+/* Optical centring of small-caps text, solved by the engine.
+   `text-box: trim-both cap alphabetic` trims the space the font reserves above
+   the capitals and below the baseline, so the text's box hugs the glyphs and
+   align-items:center genuinely centres them. It works with any family, which is
+   exactly what failed when compensating with a fixed figure: every font puts
+   the baseline at a different height. Without support, the text merely looks as
+   it did before: nothing breaks. */
 .badge > span:last-child,
 .server-cell > span {
     text-box: trim-both cap alphabetic;
@@ -337,7 +341,7 @@ body > * { position: relative; z-index: 1; }
 
 @keyframes blink { 50% { opacity: .25; } }
 
-/* --- acciones: botones de texto ------------------------------------------ */
+/* --- actions: icon buttons ----------------------------------------------- */
 
 .actions { display: flex; gap: 5px; justify-content: center; }
 
@@ -359,9 +363,9 @@ body > * { position: relative; z-index: 1; }
 .act:disabled { opacity: .3; cursor: not-allowed; }
 .act svg { width: 14px; height: 14px; display: block; }
 
-/* Iconos que vienen de un PNG en vez de un SVG en línea. El archivo es blanco
-   con alfa y se usa como MÁSCARA: lo que se ve es el fondo —currentColor—, así
-   que sigue al tema igual que los trazados. */
+/* Icons that come from a PNG instead of an inline SVG. The file is white
+   with alpha and is used as a MASK: what is seen is the background -
+   currentColor - so it follows the theme just like the drawn paths. */
 .mask-icon {
     display: block;
     width: 15px;
@@ -381,8 +385,8 @@ body > * { position: relative; z-index: 1; }
 
 .act.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .act.accent:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-/* Auto-relog activo: el unico boton con relleno, para que el estado se lea de un
-   vistazo y no se confunda con el de lanzar, que tambien va en color de acento. */
+/* Auto-relog on: the only button with a fill, so the state reads at a glance
+   and is not confused with launch, which is also in the accent colour. */
 .act.accent[data-icon="relog"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
 .act.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
@@ -404,7 +408,7 @@ body > * { position: relative; z-index: 1; }
 .btn:disabled { opacity: .35; cursor: not-allowed; }
 .btn.small { padding: 4px 9px; font-size: 11.5px; }
 
-/* La acción principal es lo único con relleno de color. */
+/* The primary action is the only thing with a colour fill. */
 .btn.primary {
     background: color-mix(in srgb, var(--accent) 88%, #000);
     border-color: color-mix(in srgb, var(--accent) 70%, transparent);
@@ -450,7 +454,7 @@ body > * { position: relative; z-index: 1; }
 .icon-btn:hover { background: var(--surface-hi); border-color: var(--line-hi); color: var(--text); }
 .icon-btn svg { width: 13px; height: 13px; }
 
-/* --- arrastrar y soltar -------------------------------------------------- */
+/* --- drag and drop ------------------------------------------------------- */
 
 .grip { width: 10px; flex: none; color: var(--text-faint); opacity: 0; cursor: grab; }
 .group-head:hover .grip { opacity: .45; }
@@ -469,7 +473,7 @@ body > * { position: relative; z-index: 1; }
     text-transform: uppercase;
 }
 
-/* --- estado vacío -------------------------------------------------------- */
+/* --- empty state --------------------------------------------------------- */
 
 .empty {
     flex: 1;
@@ -478,7 +482,7 @@ body > * { position: relative; z-index: 1; }
     color: var(--text-dim);
 }
 
-/* --- barra inferior ------------------------------------------------------ */
+/* --- status bar ---------------------------------------------------------- */
 
 .statusbar {
     flex: none;
@@ -497,9 +501,8 @@ body > * { position: relative; z-index: 1; }
     color: var(--text-faint);
 }
 .statusbar .left, .statusbar .right { display: flex; align-items: center; gap: 12px; min-width: 0; }
-/* La aplicación se nombra aquí, no arriba: con un tema de club la barra
-   superior enseña el logo del club y en ningún otro sitio diría cómo se llama
-   esto. */
+/* The application is named here, not at the top: with a club theme the top
+   bar shows the club's logo and nowhere else would say what this is called. */
 .statusbar .app-name { font-family: var(--font); color: var(--text-faint);
                        text-transform: none; letter-spacing: .3px; flex: none; }
 .statusbar .app-name b { font-weight: 600; color: var(--text-dim); }
@@ -507,10 +510,10 @@ body > * { position: relative; z-index: 1; }
                   color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .statusbar .msg.error { color: var(--danger); }
 .statusbar .msg.ok { color: var(--accent); }
-/* La instalación en uso, arriba a la derecha: rótulo apagado y RUTA en color de
-   acento, como las carpetas de Ajustes. Son dos cosas distintas —cuál y dónde—
-   y con un solo gris se leían como un pie de página; la ruta es el dato que se
-   viene a mirar, y además se puede pulsar para cambiarla. */
+/* The installation in use, top right: dim label and PATH in the accent
+   colour, like the folders in Settings. They are two different things - which
+   and where - and in a single grey they read as a footer; the path is the datum
+   one comes to look at, and it can also be clicked to change it. */
 .install-chip {
     display: inline-flex; align-items: baseline; gap: 7px; min-width: 0;
     background: none; border: none; padding: 0; cursor: pointer;
@@ -527,13 +530,13 @@ body > * { position: relative; z-index: 1; }
     min-width: 0;
     color: var(--accent-text);
     font-weight: 600;
-    /* Recorta por la izquierda: de una ruta larga importa el final. */
+    /* Ellipsis on the left: in a long path it is the end that matters. */
     direction: rtl;
     text-align: right;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* Sin instalación no hay ruta que enseñar, y eso hay que resolverlo: se pinta
-   como lo que es, algo pendiente. */
+/* With no installation there is no path to show, and that needs resolving:
+   it is painted as what it is, something outstanding. */
 .chip-empty { color: var(--warn); font-weight: 600; }
 .install-chip:hover .chip-label { color: var(--text-dim); }
 .install-chip:hover .chip-path,
@@ -550,7 +553,7 @@ body > * { position: relative; z-index: 1; }
     100% { transform: translateX(300%) scaleX(.35); }
 }
 
-/* --- panel lateral ------------------------------------------------------- */
+/* --- side panel ---------------------------------------------------------- */
 
 .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 40; }
 #modal-backdrop { display: flex; align-items: center; justify-content: center; }
@@ -570,16 +573,16 @@ body > * { position: relative; z-index: 1; }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; }
 .drawer-head h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: .4px; }
 
-/* El <details> se queda como bloque normal. Con display:flex, el slot interno
-   donde Chromium mete el contenido cuenta como flex item aunque los hijos estén
-   en display:none, y el gap lo separaba del summary: cada categoría plegada
-   arrastraba 26px fantasma. El aire vive ahora en .section-body. */
+/* The <details> stays a normal block. With display:flex, the internal slot
+   Chromium puts the content in counts as a flex item even when the children are
+   display:none, and the gap separated it from the summary: every folded section
+   dragged 26 phantom pixels. The air now lives in .section-body. */
 .drawer-section { display: block; }
-/* El registro sólo se estira cuando está desplegado: con flex:1 permanente
-   reservaba 260px de panel aun estando plegado. */
+/* The log only stretches when it is unfolded: with a permanent flex:1 it
+   reserved 260px of panel even while folded. */
 .drawer-section.grow[open] { flex: 1; min-height: 140px; display: flex; flex-direction: column; }
 
-/* Aquí sí: separación entre los controles de una misma categoría. */
+/* Here yes: spacing between the controls inside one section. */
 .section-body {
     display: flex;
     flex-direction: column;
@@ -605,11 +608,11 @@ body > * { position: relative; z-index: 1; }
     font-size: 11.5px;
     line-height: 1.6;
 }
-/* Una nota que avisa de algo que no funciona: mismo bloque, borde encendido.
-   El texto se queda apagado — el aviso lo da el borde, no un párrafo en rojo. */
+/* A note warning about something that does not work: same block, lit border.
+   The text stays dim - the warning comes from the border, not a red paragraph. */
 .note.bad { border-left-color: var(--danger); }
 
-/* Los campos de texto del panel ocupan el ancho de su sección. */
+/* The panel's text fields take the width of their section. */
 .drawer .field input[type="text"] { width: 100%; }
 
 .check { display: flex; align-items: center; gap: 9px; font-size: 12.5px; cursor: pointer; }
@@ -632,7 +635,7 @@ body > * { position: relative; z-index: 1; }
     user-select: text;
 }
 
-/* --- selector de acento -------------------------------------------------- */
+/* --- accent picker ------------------------------------------------------- */
 
 .theme-swatches { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .theme-swatch {
@@ -643,16 +646,16 @@ body > * { position: relative; z-index: 1; }
     padding: 0;
 }
 .theme-swatch.active { border-color: var(--text); }
-/* Con un tema de club el acento lo fija el club: los controles se ven, pero no
-   se tocan. El tinte sigue libre — es intensidad, no color. */
+/* With a club theme the club fixes the accent: the controls are visible but
+   not touchable. The tint stays free - it is intensity, not colour. */
 .theme-swatches.locked { opacity: .45; pointer-events: none; }
 
-/* Segunda fila: los colores que ha guardado el usuario. Va ligeramente metida
-   respecto a la paleta fija para que se lean como dos cosas distintas. */
+/* Second row: the colours the user has saved. It is slightly inset from the
+   fixed palette so the two read as different things. */
 .theme-swatches.customs { margin-top: -2px; }
 
-/* La × de olvidar un color aparece al pasar por encima, dentro de la propia
-   muestra. El acento en uso no la lleva: mientras esté puesto sigue guardado. */
+/* The x for forgetting a colour appears on hover, inside the swatch itself.
+   The accent in use does not carry one: while it is on it stays saved. */
 .theme-swatch { position: relative; }
 .swatch-x {
     position: absolute;
@@ -672,8 +675,8 @@ body > * { position: relative; z-index: 1; }
 .theme-swatch.active .swatch-x { display: none; }
 .swatch-x:hover { color: var(--text); border-color: var(--text-faint); }
 
-/* Añadir color: casilla de puntos con un «+» y, encima, el selector nativo
-   invisible — es quien abre el diálogo del sistema. */
+/* Add colour: a dotted slot with a "+" and, on top of it, the invisible
+   native picker - which is what opens the system dialog. */
 .theme-add {
     position: relative;
     width: 22px; height: 22px;
@@ -792,14 +795,14 @@ input[type="range"] { accent-color: var(--accent); cursor: pointer; }
                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popover-sep { height: 1px; background: var(--line); margin: 4px 0; }
 
-/* --- barras de desplazamiento -------------------------------------------- */
+/* --- scrollbars ---------------------------------------------------------- */
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #232825; border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: #2f3531; }
 
-/* --- desplegables del panel de ajustes ----------------------------------- */
+/* --- settings panel sections --------------------------------------------- */
 
 details.drawer-section > summary {
     list-style: none;
@@ -813,8 +816,8 @@ details.drawer-section > summary {
     user-select: none;
 }
 details.drawer-section > summary::-webkit-details-marker { display: none; }
-/* Triángulo dibujado con bordes: gira sin arrastrar la línea base, que es lo
-   que descolocaba la flecha de los grupos. */
+/* Triangle drawn with borders: it rotates without dragging the baseline
+   along, which is what knocked the groups' caret out of place. */
 details.drawer-section > summary::before {
     content: "";
     width: 0; height: 0;
@@ -830,11 +833,11 @@ details.drawer-section > summary h3 { margin: 0; }
 details.drawer-section[open] { padding-bottom: 10px; }
 
 
-/* --- ruta de instalación en la barra de marca ---------------------------- */
+/* --- install path in the brand bar --------------------------------------- */
 
 .appbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-/* --- carpetas en Ajustes ------------------------------------------------- */
+/* --- folders in Settings ------------------------------------------------- */
 
 .folder-row {
     display: flex;
@@ -854,7 +857,7 @@ details.drawer-section[open] { padding-bottom: 10px; }
     font-family: var(--font);
     font-size: 11px;
     color: var(--text-dim);
-    /* Recorta por la izquierda: de una ruta larga importa el final. */
+    /* Ellipsis on the left: in a long path it is the end that matters. */
     direction: rtl;
     text-align: left;
     white-space: nowrap;
@@ -863,7 +866,7 @@ details.drawer-section[open] { padding-bottom: 10px; }
 }
 #folder-list { display: flex; flex-direction: column; gap: 8px; }
 
-/* El botón de "lanzar todo" del grupo se distingue del resto de herramientas. */
+/* The group's "launch all" button is set apart from the other tools. */
 .icon-btn.accent { color: var(--accent); }
 .icon-btn.accent:hover {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -871,7 +874,7 @@ details.drawer-section[open] { padding-bottom: 10px; }
     color: var(--accent);
 }
 
-/* --- conmutador de disposición ------------------------------------------- */
+/* --- font switcher ------------------------------------------------------- */
 
 .segmented {
     display: inline-flex;
@@ -897,7 +900,7 @@ details.drawer-section[open] { padding-bottom: 10px; }
     font-weight: 600;
 }
 
-/* --- vista en rejilla ---------------------------------------------------- */
+/* --- card grid ----------------------------------------------------------- */
 
 .card-grid {
     display: grid;
@@ -945,13 +948,13 @@ details.drawer-section[open] { padding-bottom: 10px; }
 }
 .act.grow { flex: 1; }
 
-/* --- lanzar todo el grupo ------------------------------------------------- */
+/* --- launch the whole group ---------------------------------------------- */
 
-/* Va dentro de .group-tools, junto a editar y borrar, así que aparece al pasar
-   el ratón por la cabecera como el resto. Se distingue por tamaño y color, no
-   por posición. */
-/* Los tres botones de la cabecera de grupo comparten caja para que se lean como
-   una misma barra de herramientas; sólo cambia el color del de lanzar. */
+/* It lives inside .group-tools, next to edit and delete, so it appears on
+   hovering the header like the rest. It is set apart by size and colour, not by
+   position. */
+/* The group header's three buttons share a box so they read as one toolbar;
+   only the launch one changes colour. */
 .launch-all,
 .group-tools .icon-btn {
     display: inline-flex;
@@ -982,9 +985,10 @@ details.drawer-section[open] { padding-bottom: 10px; }
 }
 .launch-all svg { width: 17px; height: 17px; display: block; }
 
-/* El logo va como MÁSCARA, no como <img>: el PNG es blanco opaco, así que
-   pintado tal cual ignoraría el tema. Usado como máscara, lo que se ve es el
-   fondo —currentColor— y el icono sigue al acento como el resto de la interfaz. */
+/* The logo goes in as a MASK, not as an <img>: the PNG is opaque white, so
+   painted as-is it would ignore the theme. Used as a mask, what is seen is the
+   background - currentColor - and the icon follows the accent like the rest of
+   the interface. */
 .launch-all .launch-logo {
     display: block;
     width: 19px;
@@ -994,8 +998,8 @@ details.drawer-section[open] { padding-bottom: 10px; }
     mask: url("../img/launch-all.png") center / contain no-repeat;
 }
 
-/* Los Proton detectados, en Ajustes -> Wine: se elige uno y se acabó teclear
-   rutas de ..../files/bin/wine a mano. */
+/* The Protons found, in Settings -> Wine: pick one and that is the end of
+   typing .../files/bin/wine paths by hand. */
 .runner-row {
     display: flex;
     flex-direction: column;
@@ -1018,27 +1022,27 @@ details.drawer-section[open] { padding-bottom: 10px; }
     background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-/* --- hueco de inserción al arrastrar ------------------------------------- */
+/* --- insertion gap while dragging ---------------------------------------- */
 
-/* La propia tarjeta arrastrada hace de hueco y se recoloca en el destino: se
-   ve dónde va a caer sin añadir ni quitar elementos.
-   Insertar un hueco aparte parpadeaba: cada inserción recolocaba la rejilla,
-   el cursor pasaba a estar sobre otra tarjeta y el cálculo se repetía en bucle.
-   Manteniendo constante el número de celdas, eso no ocurre. */
+/* The dragged card itself acts as the gap and is moved into the target: you
+   see where it will land without adding or removing elements.
+   Inserting a separate placeholder flickered: each insertion relaid the grid,
+   the cursor ended up over a different card and the calculation looped.
+   Keeping the number of cells constant, that does not happen. */
 .card.dragging {
     opacity: 1;
     border: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
     background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-/* El contenido se oculta pero sigue ocupando su sitio: la tarjeta conserva el
-   tamaño exacto que tendrá al soltarse. */
+/* The content is hidden but still takes its space: the card keeps the exact
+   size it will have once dropped. */
 .card.dragging > * { visibility: hidden; }
 
-/* --- zonas de destino por grupo ------------------------------------------ */
+/* --- per-group drop zones ------------------------------------------------ */
 
-/* No ocupan sitio hasta que empieza un arrastre; entonces cada grupo enseña
-   dónde se puede soltar, incluidos los vacíos, que antes no ofrecían ningún
-   punto de referencia. */
+/* They take no space until a drag begins; then every group shows where a
+   card can be dropped, including the empty ones, which previously offered no
+   point of reference at all. */
 .drop-slot { display: none; }
 
 body.dragging-account .drop-slot {
@@ -1053,11 +1057,11 @@ body.dragging-account .drop-slot.over {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-/* Si la tarjeta arrastrada ya está dentro de este grupo, ella misma hace de
-   hueco: mostrar además la zona del grupo dejaba dos recuadros vacíos seguidos,
-   como si hubiera dos destinos distintos. */
+/* If the dragged card is already inside this group, it acts as the gap
+   itself: also showing the group's zone left two empty boxes in a row, as if
+   there were two different destinations. */
 .card-grid:has(.card.dragging) .drop-slot { display: none; }
 
-/* Con el arrastre en curso, una categoría plegada sigue admitiendo la cuenta
-   por su cabecera, así que se resalta igual. */
+/* With a drag in progress, a folded group still accepts the account through
+   its header, so it is highlighted the same way. */
 body.dragging-account .group-head { transition: background .12s ease; }

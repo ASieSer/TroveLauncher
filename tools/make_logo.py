@@ -1,14 +1,14 @@
-"""Genera `web/img/trove-accounts-hub.svg`: marca isométrica + rótulo.
+"""Generates `web/img/trove-accounts-hub.svg`: isometric mark plus wordmark.
 
-El rótulo se traza a curvas desde la Comfortaa que ya viaja con la app
-(instanciada a wght=700), así el SVG no depende de ninguna fuente al pintarse y
-se puede usar como máscara CSS para que tome el color de acento.
+The wordmark is traced to curves from the Comfortaa that already ships with the
+app (instanced at wght=700), so the SVG depends on no font when painted and can
+be used as a CSS mask to take the accent colour.
 
-Sólo hace falta para REGENERAR el logo; la aplicación no lo usa ni necesita
-estas dependencias:
+Only needed to REGENERATE the logo; the application neither uses this script nor
+needs its dependencies:
 
     pip install fonttools brotli
-    python tools/make_logo.py     # desde la raíz del repositorio
+    python tools/make_logo.py     # from the repository root
 """
 from pathlib import Path
 
@@ -31,7 +31,7 @@ for w in (600, 700):
 
 
 def line(text, cap, track, weight):
-    """Una línea de texto ya trazada a curvas, y su ancho."""
+    """One line of text already traced to curves, plus its width."""
     glyphs, hmtx = weights[weight]
     scale = cap / cap_h
     parts, x = [], 0.0
@@ -42,41 +42,41 @@ def line(text, cap, track, weight):
             glyphs[name].draw(pen)
             d = pen.getCommands()
             if d:
-                # y invertida: la fuente crece hacia arriba, el SVG hacia abajo.
+                # y flipped: the font grows upwards, the SVG downwards.
                 parts.append(f'<path transform="translate({x:.2f} 0) '
                              f'scale({scale:.5f} {-scale:.5f})" d="{d}"/>')
         x += (hmtx[name][0] + track * upem) * scale
     return parts, x - track * upem * scale
 
 
-# --- rótulo: el nombre corto arriba, la coletilla debajo en versalitas -----
+# --- wordmark: the short name on top, the tail below in small caps ---------
 #
-# Las dos líneas se justifican al mismo ancho: se mide la de abajo, que es la
-# larga, y se abre el tracking de la de arriba hasta igualarla. Un bloque de
-# lados rectos se lee como una sola pieza, no como un texto de dos renglones.
+# Both lines are justified to the same width: the lower one, which is the long
+# one, is measured and the upper one's tracking is opened until it matches. A
+# block with straight sides reads as one piece, not as two lines of text.
 CAP_TOP, CAP_SUB = 13.2, 6.6
 sub, sub_w = line("ACCOUNTS HUB", CAP_SUB, 0.155, 600)
 _, bare_w = line("TROVE", CAP_TOP, 0.0, 700)
 track_top = (sub_w - bare_w) / (upem * (CAP_TOP / cap_h) * (len("TROVE") - 1))
 top, top_w = line("TROVE", CAP_TOP, track_top, 700)
-LEAD = 6.4                                   # hueco entre las dos líneas
+LEAD = 6.4                                   # gap between the two lines
 word_w = max(top_w, sub_w)
 word_h = CAP_TOP + LEAD + CAP_SUB
 
-# --- marca: cubo isométrico de tres caras con juntas ----------------------
-W, H, S = 10.5, 6.1, 11.5             # semiancho, semialto del rombo, altura del lateral
+# --- mark: an isometric three-faced cube with seams -----------------------
+W, H, S = 10.5, 6.1, 11.5             # half-width, half-height of the rhombus, side height
 faces = [
-    [(0, 0), (W, H), (0, 2 * H), (-W, H)],                        # tapa
-    [(-W, H), (0, 2 * H), (0, 2 * H + S), (-W, H + S)],           # izquierda
-    [(W, H), (0, 2 * H), (0, 2 * H + S), (W, H + S)],             # derecha
+    [(0, 0), (W, H), (0, 2 * H), (-W, H)],                        # top
+    [(-W, H), (0, 2 * H), (0, 2 * H + S), (-W, H + S)],           # left
+    [(W, H), (0, 2 * H), (0, 2 * H + S), (W, H + S)],             # right
 ]
-INSET = 1.45                           # separación entre caras + radio del vértice
+INSET = 1.45                           # gap between faces + corner radius
 mark = []
 for face in faces:
     cx = sum(p[0] for p in face) / len(face)
     cy = sum(p[1] for p in face) / len(face)
-    # Encoger hacia el centro y devolver el grosor con un trazo redondeado:
-    # así las esquinas salen romas sin calcular arcos a mano.
+    # Shrink towards the centre and give the thickness back with a rounded
+    # stroke: that way the corners come out blunt without hand-computing arcs.
     pts = []
     for px, py in face:
         dx, dy = px - cx, py - cy
