@@ -24,6 +24,16 @@ includes it and Windows 10 gets it with Edge, so it is almost certainly already
 on your machine. If it is not, the app says so on start-up and links to the
 [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 
+> **Windows will warn you the first time.** The executable is not code-signed —
+> a certificate costs a few hundred euros a year and this is a free tool — so
+> SmartScreen shows *"Windows protected your PC"*. The button that runs it
+> anyway is behind **More info** → **Run anyway**.
+>
+> If you would rather not take that on trust, don't: the whole thing is here,
+> `build.bat` produces the same executable on your own machine, and every
+> release lists the SHA-256 of the file it ships so you can check what you
+> downloaded is what was built.
+
 ### From source
 
 ```bash
@@ -162,14 +172,21 @@ game folder is also updated once, not once per account.
 
 ### Auto-relog
 
-Per account, on the loop button. It signs back in when the game ends — whether
-it crashed or closed cleanly, because being kicked for idling looks like a clean
-exit from here and you want the account back either way.
+Per account, on the loop button. It signs back in **whenever the game ends** —
+crashed, kicked for idling, or closed by you with the X or Alt+F4. All three
+look the same from here, and if you asked for the account to stay logged in,
+the answer to "the game is gone" is the same in every case: bring it back.
 
-It does **not** relaunch what you closed yourself from the launcher, and not
-anything that dies within the first few seconds, so a failing start cannot
-chain. If the crash left Trove's crash reporter open, that gets closed too;
-otherwise ten relogs leave you with ten dialogs.
+Two things are never relaunched:
+
+- **What you closed from the launcher.** Pressing Stop means stop.
+- **A game that keeps dying.** If it exits badly within 25 seconds three times
+  in a row, auto-relog gives up and says so, so a game that cannot start cannot
+  loop forever. A clean exit never counts towards that — closing the window ten
+  seconds in signs straight back in.
+
+If the crash left Trove's crash reporter open, that gets closed too; otherwise
+ten relogs leave you with ten dialogs.
 
 A background relog cannot ask you for anything, so it needs a saved password.
 

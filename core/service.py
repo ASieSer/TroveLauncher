@@ -32,12 +32,13 @@ on each other over a shared resource:
 Auto-relog
 ----------
 
-After launching, a thread watches the PID. When the game ends - whether it
-crashed or closed normally, which is what being kicked for idling looks like -
-we authenticate again and relaunch. What the user closed from the launcher is
-not relaunched, nor is anything that dies before ``_MIN_UPTIME_FOR_RELOG``, so
-failed starts do not chain. And if the crash left Trove's crash reporter open,
-it is closed: see ``_close_crash_handler``.
+After launching, a thread watches the PID. When the game ends - crashed,
+closed cleanly, or kicked for idling, which all look the same from here - we
+authenticate again and relaunch. Two things are not relaunched: what the user
+closed from the launcher, and a game that keeps dying badly within
+``_SHORT_SESSION`` (see ``_MAX_SHORT_RELOGS``), so a crash loop cannot run
+forever. And if the crash left Trove's crash reporter open, it is closed: see
+``_close_crash_handler``.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ import threading
 import time
 from pathlib import Path
 
+from . import __version__
 from . import gamehost, installs, prefs, trionauth
 from . import vault as vault_mod
 from . import updater as _updater
@@ -75,7 +77,15 @@ REGION_BRANCH = {"NA": ("live-us", "live"), "EU": ("live-us", "live"),
                  "PTS": ("pts", "pts")}
 
 _CANCEL_2FA = object()          # sentinel that aborts a launch waiting for a code
-_MIN_UPTIME_FOR_RELOG = 25.0    # seconds: dying sooner than this means no relaunch
+# How short a session has to be to look like it never got going. On its own it
+# means nothing - people close the game early all the time - so it only counts
+# alongside a bad exit code. See _monitor_launch.
+_SHORT_SESSION = 25.0
+
+# How many short, badly-ended sessions in a row before auto-relog gives up. The
+# guard exists to stop a crash LOOP, not to second-guess the user, so a game
+# that exits cleanly never counts towards it however briefly it ran.
+_MAX_SHORT_RELOGS = 3
 
 # Breathing room between a session that is up and the next start. Not cosmetic:
 # the game process is identified as "the one that was not there before", so the
@@ -358,6 +368,7 @@ class LauncherService:
             })
 
         return {
+            "version": __version__,
             "groups": prefs.groups(),
             "accounts": accounts,
             "installs": self.install_list(),
@@ -751,12 +762,23 @@ class LauncherService:
             self._emit_running()
             return
 
-        # We sign back in however it closed: a crash and an idle kick are the
-        # same thing seen from here (the second one, in fact, closes the game
-        # cleanly), and whoever turns auto-relog on wants the account to stay in.
-        # The only things not relaunched are what the user closed - handled above
-        # - and what dies straight away, so failed starts do not chain.
-        should_relog = bool(info.get("auto_relog")) and uptime >= _MIN_UPTIME_FOR_RELOG
+        # We sign back in however the game ended. A crash and an idle kick look
+        # identical from here, and closing the window yourself is no different:
+        # it is a clean exit, and the answer to "the game is gone" is still to
+        # bring it back. That is what turning auto-relog on asks for.
+        #
+        # The one thing worth refusing is a crash LOOP. So a session only counts
+        # against us when it was BOTH short AND ended badly, and only a run of
+        # those stops the relog. A clean exit never counts, which is why closing
+        # the game ten seconds in signs straight back in.
+        ended_badly = code is None or code != 0
+        streak = (info.get("short_streak", 0) + 1
+                  if ended_badly and uptime < _SHORT_SESSION else 0)
+
+        should_relog = bool(info.get("auto_relog"))
+        gave_up = should_relog and streak > _MAX_SHORT_RELOGS
+        if gave_up:
+            should_relog = False
 
         if should_relog and code is None and self._still_running(pid):
             # We do not know the exit code and the process is still in the
@@ -767,13 +789,18 @@ class LauncherService:
             should_relog = False
 
         if not should_relog:
-            if info.get("auto_relog") and uptime < _MIN_UPTIME_FOR_RELOG:
-                message = f"{who} exited after {int(uptime)}s — too soon to relog."
+            if gave_up:
+                message = (f"{who} died within {int(_SHORT_SESSION)}s "
+                           f"{streak} times running — auto-relog gave up.")
             else:
                 message = f"{who} has closed."
             self.emit("running", "closed", pid=pid, email=info["email"], message=message)
             self._emit_running()
             return
+
+        # The streak has to survive into the next attempt, or a loop would
+        # never add up and the guard above could never fire.
+        info["short_streak"] = streak
 
         how = "closed" if code == 0 else f"exited (code {code})"
         self.emit("running", "relog", pid=pid, email=info["email"],
