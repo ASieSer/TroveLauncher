@@ -929,13 +929,31 @@
 
     // --- instalación y tema ------------------------------------------------
 
+    /** Un chip de instalación: `LIVE` apagado + la ruta en color de acento. Van
+     *  en nodos separados porque son dos cosas distintas, y porque el recorte
+     *  por la izquierda sólo debe aplicarse a la ruta. */
+    function fillInstallChip(chip, kind, path) {
+        chip.innerHTML = '';
+        if (!path) {
+            const empty = el('span', 'chip-empty');
+            empty.textContent = `Set ${kind} install`;
+            chip.appendChild(empty);
+            return;
+        }
+        const label = el('span', 'chip-label');
+        label.textContent = kind;
+        const text = el('span', 'chip-path');
+        text.textContent = path;
+        chip.append(label, text);
+        chip.title = `${kind} installation — ${path}`;
+    }
+
     function renderInstallChips() {
-        const live = state.game_path || '';
-        $('install-live').textContent = live ? 'Live: ' + live : 'Set Live install';
+        fillInstallChip($('install-live'), 'Live', state.game_path || '');
         const needsPts = state.accounts.some((a) => a.region === 'PTS') || !!state.pts_game_path;
         const chip = $('install-pts');
         chip.classList.toggle('hidden', !needsPts);
-        chip.textContent = state.pts_game_path ? 'PTS: ' + state.pts_game_path : 'Set PTS install';
+        fillInstallChip(chip, 'PTS', state.pts_game_path || '');
     }
 
     function openInstallMenu(anchor, kind) {
@@ -1083,6 +1101,38 @@
         return vsDark > vsWhite ? '#0a0c0b' : '#ffffff';
     }
 
+    /** El acento, aclarado lo justo para leerse COMO TEXTO sobre el fondo.
+     *
+     *  Un acento oscuro —el rojo de Sayro, sin ir más lejos— pintado en texto
+     *  pequeño se hunde en el fondo negro: se queda en 2,2:1 cuando la WCAG pide
+     *  4,5:1. Aquí se sube la luminosidad mezclando con blanco lo mínimo para
+     *  llegar, así que un acento que ya se leía (verde, cian, ámbar) sale
+     *  intacto y sólo se toca el que no. */
+    function readableAccent(hex) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+        if (!m) return 'var(--accent)';
+        const n = parseInt(m[1], 16);
+        const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+        // Luminancia mínima para 4,5:1 contra el fondo (~0.0035): 0.05*4.5-0.05.
+        const WANTED = 0.1975;
+        const lum = (c) => {
+            const ch = c.map((v) => {
+                const x = v / 255;
+                return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+            });
+            return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+        };
+        if (lum(rgb) >= WANTED) return '#' + m[1].toLowerCase();
+        let lo = 0, hi = 1;
+        for (let i = 0; i < 12; i++) {          // bisección: 12 pasos sobran
+            const t = (lo + hi) / 2;
+            const mixed = rgb.map((v) => v + (255 - v) * t);
+            if (lum(mixed) >= WANTED) hi = t; else lo = t;
+        }
+        const out = rgb.map((v) => Math.round(v + (255 - v) * hi));
+        return '#' + out.map((v) => v.toString(16).padStart(2, '0')).join('');
+    }
+
     function applyTheme(theme) {
         const club = clubOf(theme);
         // El acento propio se guarda intacto aunque el club pinte otro: al
@@ -1101,6 +1151,8 @@
         document.documentElement.style.setProperty('--font', FONTS[font]);
         // 0.88: el botón principal pinta el acento mezclado con negro a ese %.
         document.documentElement.style.setProperty('--on-accent', readableOn(accent, 0.88));
+        // Para el acento escrito, no relleno: ver readableAccent.
+        document.documentElement.style.setProperty('--accent-text', readableAccent(accent));
         document.body.classList.toggle('no-stars', !stars);
         renderBrand({ club: club });
         return { accent: own, stars: stars, tint: tint, font: font, club: club,

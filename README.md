@@ -90,7 +90,7 @@ python main.py --debug
 | --- | --- |
 | `index.html` | Estructura: barra superior con la marca, barra de acciones, tablero de cuentas, barra de estado y panel de ajustes. |
 | `img/trove-accounts-hub.svg` | Logo propio: cubo isométrico y rótulo en dos líneas justificadas al mismo ancho. El texto va trazado a curvas desde la Comfortaa que ya viaja con la app, así que no depende de ninguna fuente al pintarse. Lo genera `tools/make_logo.py` (`pip install fonttools brotli`), que no hace falta para usar la aplicación. |
-| `css/app.css` | Tema oscuro plano. Un único color vivo —el acento— tiñe el fondo entero en un porcentaje bajo y marca la acción principal y los estados activos. |
+| `css/app.css` | Tema oscuro plano. Un único color vivo —el acento— tiñe el fondo entero en un porcentaje bajo y marca la acción principal, los estados activos y la ruta de la instalación en uso. Los **estados** no lo usan: verde jugando, cian comprobada, ámbar en marcha, rojo fallida, y gris lo que aún no se sabe. Son fijos a propósito: un estado no puede depender de qué acento toque hoy. |
 | `js/app.js` | Todo el comportamiento: pintado del tablero, arrastrar y soltar, diálogos, preferencias y eventos que llegan del backend. |
 
 **La barra superior enseña sólo una imagen**: el logo del tema puesto, sin
@@ -142,6 +142,9 @@ Todo se ajusta desde Ajustes → Appearance y se guarda en `theme` dentro de
   sistema) y se queda ahí para volver a él; el que esté en uso siempre está
   guardado, y el resto se olvidan con la `×` que aparece encima. Son ocho
   huecos: al llenarlos, el más viejo cede el sitio.
+  Cuando se escribe con el acento en vez de rellenar con él —la ruta de arriba a
+  la derecha—, se aclara lo justo para llegar al 4,5:1 de la WCAG: un acento
+  oscuro como el rojo de Sayro, en texto pequeño, se hundía en el fondo.
 - **Tint strength** — cuánto acento llega al fondo. **No lo bloquea ningún
   tema**: es intensidad, no color, y sigue siendo del usuario aunque el club
   mande en el acento. A 0% la interfaz queda gris neutra.
@@ -298,7 +301,7 @@ No hay framework: son guiones sueltos, sin dependencias salvo donde se indica.
 | `tools/test_installs_prefix.py` | Encontrar Trove dentro de prefijos de Proton y Wine (necesita mingw-w64). |
 | `tools/test_proton_runner.py` | Elegir el runner del prefijo y avisar del símbolo que le falta al Wine del sistema. |
 | `tools/test_launch_order.py` | Que «Launch all» reparta una partida por cuenta y que el auto-relog haga lo que dice. |
-| `tools/test_statusbar.py` | Que el indicador de la barra inferior se encienda y se apague con lo que hay en marcha (necesita playwright). |
+| `tools/test_ui.py` | La interfaz en un navegador: el indicador de la barra inferior y los colores del tema (necesita playwright). |
 | `tools/test_wine_helper.py` | La entrega del ticket de extremo a extremo bajo Wine (necesita wine64 y mingw-w64). |
 | `tools/check_linux.py` | No es una prueba: comprueba que ESTE equipo está listo para usarla en Linux. |
 

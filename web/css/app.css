@@ -44,6 +44,11 @@
     --ok: #22c55e;
     --warn: #eab308;
     --danger: #ef4444;
+    /* «Comprobada, pero no jugando». Aparte del verde de RUNNING a propósito:
+       son dos estados distintos y con el mismo color no se distinguirían de un
+       vistazo. Y aparte del acento, que lo elige el usuario: un estado no puede
+       depender de que hoy toque morado. */
+    --info: #38bdf8;
 
     --r: 5px;
     --r-md: 7px;
@@ -54,6 +59,9 @@
     /* Texto sobre el relleno de acento: lo calcula el JS según la luminancia,
        porque con acentos claros el blanco no se lee. */
     --on-accent: #ffffff;
+    /* El acento cuando se escribe con él en vez de rellenar: lo calcula el JS
+       (readableAccent), que lo aclara si el color elegido no se leería. */
+    --accent-text: var(--accent);
     --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
@@ -325,7 +333,7 @@ body > * { position: relative; z-index: 1; }
 .badge.failed { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
 .badge.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
 .badge.unknown { color: var(--text-faint); }
-.badge.ready { color: var(--text-dim); border-color: var(--line-hi); }
+.badge.ready { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
 
 @keyframes blink { 50% { opacity: .25; } }
 
@@ -499,15 +507,37 @@ body > * { position: relative; z-index: 1; }
                   color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .statusbar .msg.error { color: var(--danger); }
 .statusbar .msg.ok { color: var(--accent); }
+/* La instalación en uso, arriba a la derecha: rótulo apagado y RUTA en color de
+   acento, como las carpetas de Ajustes. Son dos cosas distintas —cuál y dónde—
+   y con un solo gris se leían como un pie de página; la ruta es el dato que se
+   viene a mirar, y además se puede pulsar para cambiarla. */
 .install-chip {
-    background: none; border: none; padding: 0;
-    color: var(--text-faint); cursor: pointer;
+    display: inline-flex; align-items: baseline; gap: 7px; min-width: 0;
+    background: none; border: none; padding: 0; cursor: pointer;
     font-family: var(--font); font-size: 10.5px;
     letter-spacing: 0; text-transform: none;
-    max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    direction: rtl; text-align: right;
+    max-width: 340px;
 }
-.install-chip:hover { color: var(--text-dim); }
+.chip-label {
+    flex: none;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
+    color: var(--text-faint);
+}
+.chip-path {
+    min-width: 0;
+    color: var(--accent-text);
+    font-weight: 600;
+    /* Recorta por la izquierda: de una ruta larga importa el final. */
+    direction: rtl;
+    text-align: right;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Sin instalación no hay ruta que enseñar, y eso hay que resolverlo: se pinta
+   como lo que es, algo pendiente. */
+.chip-empty { color: var(--warn); font-weight: 600; }
+.install-chip:hover .chip-label { color: var(--text-dim); }
+.install-chip:hover .chip-path,
+.install-chip:hover .chip-empty { text-decoration: underline; }
 
 .bar { width: 120px; height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .bar-fill {

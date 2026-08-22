@@ -1,17 +1,17 @@
-"""El indicador de abajo: la barra y el texto se encienden y se apagan JUNTOS.
+"""La interfaz, cargada de verdad en un navegador con un backend de mentira.
 
-Lo que se veía mal: al terminar de lanzar una cuenta desaparecía la barra
-animada pero el «Signing in …» se quedaba unos segundos más, como si siguiera
-pasando algo. Y al revés: una operación larga acababa con la barra girando y sin
-texto, porque el mensaje se borraba solo a los 7 segundos.
+Se comprueba lo que sólo se ve mirando la pantalla:
 
-Aquí se carga la interfaz de verdad en un navegador, con un backend de mentira,
-y se le meten los mismos eventos que emite ``core/service.py``.
+  * el indicador de abajo —barra y texto se encienden y se apagan JUNTOS—, que
+    era el fallo de «al terminar de lanzar, el "Signing in …" se quedaba unos
+    segundos de más»; y
+  * los colores del tema, que un acento oscuro no deje texto ilegible y que
+    READY no se confunda con RUNNING.
 
 Hace falta Playwright con Chromium:
 
     pip install playwright && playwright install chromium
-    python tools/test_statusbar.py
+    python tools/test_ui.py
 """
 from __future__ import annotations
 
@@ -33,7 +33,13 @@ except ImportError:
 
 # Un estado mínimo: lo que se mira aquí es la barra de estado, no las tarjetas.
 STATE = {
-    "groups": [], "accounts": [], "installs": [], "regions": ["NA", "EU", "PTS"],
+    "groups": [],
+    "accounts": [{"email": "wolf@example.com", "name": "Wolf", "label": "Wolf",
+                  "masked": "w***@example.com", "group": None, "region": "EU",
+                  "status": "ready", "detail": "", "auto_relog": False,
+                  "flagged": False, "pid": None, "uptime": 0,
+                  "has_saved_password": True}],
+    "installs": [], "regions": ["NA", "EU", "PTS"],
     "game_path": "/games/Trove/Live", "pts_game_path": "", "hide_emails": True,
     "remember_password": True, "wine_binary": "", "wine_prefix": "",
     "theme": {"accent": "#22c55e", "customs": [], "stars": True,
@@ -162,6 +168,58 @@ with sync_playwright() as p:
     fire({"op": "play", "stage": "settled", "email": "slow@x.com"})
     check("y al cancelarlo (sólo llega 'settled') se apaga el indicador",
           not bar() and msg() == "")
+
+    # --- colores del tema ---------------------------------------------------
+    #
+    # El diálogo del 2FA de antes sigue abierto: se cierra como lo cerraría el
+    # usuario, con Escape, antes de tocar los ajustes.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    check("Escape cierra el diálogo del 2FA",
+          page.locator("#modal-backdrop").evaluate(
+              "e => e.classList.contains('hidden')"))
+
+    def css_var(name):
+        return page.evaluate(
+            "n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()",
+            name)
+
+    def luminance(hex_color):
+        """Luminancia relativa (WCAG) de un #rrggbb."""
+        raw = hex_color.lstrip("#")
+        out = []
+        for i in (0, 2, 4):
+            x = int(raw[i:i + 2], 16) / 255
+            out.append(x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * out[0] + 0.7152 * out[1] + 0.0722 * out[2]
+
+    def contrast(hex_color, background=0.0035):
+        return (luminance(hex_color) + 0.05) / (background + 0.05)
+
+    # READY tenía el gris del texto apagado y se leía como «no pasa nada»; es un
+    # estado comprobado y lleva color propio, distinto del verde de RUNNING.
+    ready = page.locator(".badge.ready").first
+    check("READY no se pinta con el gris del texto",
+          ready.evaluate("e => getComputedStyle(e).color") == "rgb(56, 189, 248)")
+    check("y no comparte color con RUNNING",
+          css_var("--ok") and css_var("--info") != css_var("--ok"))
+
+    # El acento se escribe en la ruta de la instalación, así que tiene que
+    # LEERSE. El verde ya se lee y se deja como está.
+    check("un acento claro se usa tal cual", css_var("--accent-text") == "#22c55e")
+
+    # El rojo oscuro de Sayro, no: sobre el fondo negro se queda en ~2,2:1.
+    page.locator("#open-settings").click()
+    page.wait_for_timeout(200)
+    page.select_option("#theme-club", "sayro")
+    page.wait_for_timeout(300)
+    dark, text = css_var("--accent"), css_var("--accent-text")
+    check("con un acento oscuro, el acento no cambia", dark == "#b91c1c")
+    check("pero el escrito se aclara hasta poder leerse",
+          text != dark and contrast(text) >= 4.5)
+    check("y sigue siendo el mismo color, no otro",
+          int(text[1:3], 16) > int(text[3:5], 16) and
+          int(text[1:3], 16) > int(text[5:7], 16))
 
     browser.close()
 
