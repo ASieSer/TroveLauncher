@@ -149,8 +149,16 @@ window.App = window.App || {};
         App.paintEyeButton();
         App.render();
         App.renderInstallChips();
+        App.stampVersion(next.version);
         if (!$('drawer').classList.contains('hidden')) App.renderDrawer();
         App.stampSweep();
+    };
+
+    /** The version in the status bar. It comes from the backend rather than
+     *  being written into the HTML, so it always matches what was built. */
+    App.stampVersion = function (version) {
+        const box = $('app-version');
+        if (box) box.textContent = version ? 'v' + version : '';
     };
 
     App.stampSweep = function () {
