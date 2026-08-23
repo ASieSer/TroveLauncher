@@ -97,10 +97,23 @@ window.App = window.App || {};
 
     App.clearNotice = function () { App.notice('', ''); };
 
+    // The log keeps only the last stretch. Appending forever grows a string
+    // that nothing ever trims, and a launcher left open all day with several
+    // accounts relogging produces a lot of lines nobody is going to read.
+    const LOG_MAX_LINES = 500;
+    const logLines = [];
+
     App.logLine = function (text) {
+        logLines.push(String(text));
+        if (logLines.length > LOG_MAX_LINES) logLines.shift();
+
         const log = $('log');
-        log.textContent += (log.textContent ? '\n' : '') + text;
-        log.scrollTop = log.scrollHeight;
+        // Only follow the tail if that is where the user already was. Scrolling
+        // up to read something and being yanked back down by the next line is
+        // worse than missing it.
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+        log.textContent = logLines.join('\n');
+        if (atBottom) log.scrollTop = log.scrollHeight;
     };
 
     // --- the bridge -------------------------------------------------------

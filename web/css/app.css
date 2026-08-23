@@ -618,9 +618,14 @@ body > * { position: relative; z-index: 1; }
 .check { display: flex; align-items: center; gap: 9px; font-size: 12.5px; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
 
+/* The log scrolls inside itself. Without a ceiling it just grows, the section
+   grows with it and what scrolls is the whole settings panel - so the log ends
+   up dragging every other section off the screen. */
 .log {
     margin: 0;
     flex: 1;
+    min-height: 120px;
+    max-height: 300px;
     overflow-y: auto;
     padding: 10px 11px;
     border-radius: var(--r);
