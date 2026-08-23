@@ -185,6 +185,11 @@ Two things are never relaunched:
   loop forever. A clean exit never counts towards that — closing the window ten
   seconds in signs straight back in.
 
+The button is a plain toggle and takes effect **immediately**, whatever the
+account is doing — game already running, or a relog halfway through signing
+back in. The setting is read at the moment it matters rather than copied into
+each launch, so what the icon shows is always what will happen.
+
 If the crash left Trove's crash reporter open, that gets closed too; otherwise
 ten relogs leave you with ten dialogs.
 

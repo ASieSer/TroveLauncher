@@ -553,6 +553,23 @@ class LauncherService:
 
     # --- tracking launched processes + auto-relog ----------------------
 
+    def wants_relog(self, email: str) -> bool:
+        """Does this account want to sign back in? Asked, never remembered.
+
+        This used to be snapshotted into each launch, and the snapshot went
+        stale in a way nobody could see: between the game exiting and the relog
+        actually spawning there are a few seconds of sleeping and
+        authenticating, and during them the launch is no longer in
+        ``_launches``. A toggle in that window updated nothing, and the copy
+        taken at the previous launch carried on deciding - so turning auto-relog
+        off left it relogging forever, and turning it on did nothing the first
+        time.
+
+        Reading the account each time it matters removes the window entirely.
+        """
+        account = prefs.get_account(email)
+        return bool(account and account.get("auto_relog"))
+
     def _tracked_pids(self) -> set[int]:
         """Pids of sessions we already track. They are excluded when resolving a
         new launch's process: if two accounts start at once and one has to fall
@@ -570,7 +587,8 @@ class LauncherService:
             "email": i["email"],
             "label": prefs.display_name(i["email"]),
             "region": i["region"],
-            "auto_relog": bool(i.get("auto_relog")),
+            # From the account, not from the launch: see wants_relog.
+            "auto_relog": self.wants_relog(i["email"]),
             "relogs": i.get("relogs", 0),
             "uptime": int(now - i["started_at"]),
         } for i in items]
@@ -775,7 +793,7 @@ class LauncherService:
         streak = (info.get("short_streak", 0) + 1
                   if ended_badly and uptime < _SHORT_SESSION else 0)
 
-        should_relog = bool(info.get("auto_relog"))
+        should_relog = self.wants_relog(info["email"])
         gave_up = should_relog and streak > _MAX_SHORT_RELOGS
         if gave_up:
             should_relog = False
@@ -827,6 +845,16 @@ class LauncherService:
         auth = self._make_auth(info["email"], password)
         # No token_provider: a background relog cannot ask for the 2FA code.
         ticket = auth.get_ticket()
+
+        # Asked again, right at the end: sleeping and authenticating take long
+        # enough that the user can turn auto-relog off while this is in flight,
+        # and pressing the button has to mean what it says.
+        if not self.wants_relog(info["email"]):
+            self.emit("running", "relog_cancelled", email=info["email"],
+                      message=f"{prefs.display_name(info['email'])}: "
+                              f"auto-relog turned off, not signing back in.")
+            return
+
         exe = self._resolve_exe(Path(info["game_path"]))
         new_info = dict(info)
         new_info["started_at"] = time.time()
@@ -840,9 +868,9 @@ class LauncherService:
     def set_auto_relog(self, email: str, enabled: bool = True) -> dict:
         """Turns auto-relog on or off for ONE account.
 
-        It is saved on the account and, if that account has a game open, applied
-        to the live instance too: changing the option with the game already
-        running must take effect on that same launch, not the next one.
+        It takes effect immediately, whatever the account is doing: a game
+        already running, a relog mid-flight, or nothing at all. See
+        ``wants_relog`` for why that is a plain write and not a broadcast.
         """
         enabled = bool(enabled)
         # Check BEFORE writing: upsert_account creates the account if it cannot
@@ -853,10 +881,9 @@ class LauncherService:
         account = prefs.upsert_account(email, auto_relog=enabled)
         if account is None:
             return {"ok": False, "error": "That account does not exist."}
-        with self._launch_lock:
-            for info in self._launches.values():
-                if info["email"].lower() == email.lower():
-                    info["auto_relog"] = enabled
+        # Nothing else to update: every decision reads the account (see
+        # wants_relog), so writing it here is the whole change - including for
+        # a game that is already running, or a relog already in flight.
         self._emit_running()
         return {"ok": True, "auto_relog": enabled}
 
@@ -886,8 +913,6 @@ class LauncherService:
         do_update = data.get("update_first", True) if update_first is None else bool(update_first)
         do_remember = (data.get("remember_password", True)
                        if remember_password is None else bool(remember_password))
-        # Per account, not global: each decides whether it signs back in itself.
-        auto_relog = bool(account.get("auto_relog", False))
 
         busy = self._claim_account(email, "launching")
         if busy:
@@ -926,7 +951,7 @@ class LauncherService:
             pid = self._spawn_game(
                 exe, ticket, launch_mod.get_auth_server(region),
                 {"email": email, "game_path": str(game_dir), "region": region,
-                 "branch": branch, "auto_relog": auto_relog},
+                 "branch": branch},
                 log=self._logger("play", email))
 
             # The launcher never touches the game's window: it does not bring
