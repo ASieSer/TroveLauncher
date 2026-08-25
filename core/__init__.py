@@ -28,4 +28,4 @@ the updater on its own works anywhere.
 # The one place the version is written. It reaches the status bar through
 # ``LauncherService.state``, so the number on screen cannot drift from the
 # release tag the way a string pasted into the HTML could.
-__version__ = "0.2"
+__version__ = "0.2.1"

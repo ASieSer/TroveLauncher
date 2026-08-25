@@ -254,7 +254,12 @@ body > * { position: relative; z-index: 1; }
     align-items: center;
     gap: 8px;
     height: 34px;
-    padding: 0 14px;
+    /* Inset instead of running edge to edge: the frame stops just short of the
+       drag grip on one side and the tools on the other, so it reads as a label
+       for the group rather than a band across the window. The 2px of padding
+       is what leaves that sliver. */
+    margin: 0 13px;
+    padding: 0 2px;
     cursor: pointer;
     border: 1px solid color-mix(in srgb, var(--group) 42%, transparent);
     border-radius: var(--r);
@@ -590,10 +595,14 @@ body > * { position: relative; z-index: 1; }
     background: var(--surface);
     border-left: 1px solid var(--line);
     display: flex; flex-direction: column;
-    padding: 18px 20px 26px;
+    /* The bottom gap is a margin on the last child, not padding here: a
+       scrolling flex container does not let you reach its end padding, which
+       is what left the log box flush against the window edge. */
+    padding: 18px 20px 0;
     gap: 10px;
     overflow-y: auto;
 }
+.drawer > :last-child { margin-bottom: 26px; }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; }
 .drawer-head h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: .4px; }
 
@@ -602,9 +611,11 @@ body > * { position: relative; z-index: 1; }
    display:none, and the gap separated it from the summary: every folded section
    dragged 26 phantom pixels. The air now lives in .section-body. */
 .drawer-section { display: block; }
-/* The log only stretches when it is unfolded: with a permanent flex:1 it
-   reserved 260px of panel even while folded. */
-.drawer-section.grow[open] { flex: 1; min-height: 140px; display: flex; flex-direction: column; }
+/* The log section is sized by its content, not stretched to fill.
+   With flex:1 it grew into the panel's bottom padding, so at the end of the
+   scroll the box sat flush against the window edge and the last lines were
+   unreachable however far you scrolled. */
+.drawer-section.grow[open] { display: flex; flex-direction: column; }
 
 /* Here yes: spacing between the controls inside one section. */
 .section-body {
@@ -645,10 +656,28 @@ body > * { position: relative; z-index: 1; }
 /* The log scrolls inside itself. Without a ceiling it just grows, the section
    grows with it and what scrolls is the whole settings panel - so the log ends
    up dragging every other section off the screen. */
-/* The log's own toolbar, above the box. Kept out of the <summary> so clicking
-   Clear cannot also fold the section. */
-.log-tools { display: flex; justify-content: flex-end; margin-bottom: -12px; }
-.btn.ghost.small { padding: 4px 12px; font-size: 11px; }
+/* The clear button sits inside the box, top right, out of the way of the text
+   and of the scrollbar. Inside the wrapper rather than in the <summary>, so
+   clicking it cannot also fold the section away. */
+.log-wrap { position: relative; display: flex; flex-direction: column; min-height: 0; }
+.log-clear {
+    position: absolute;
+    top: 7px; right: 16px;
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    background: var(--field);
+    color: var(--text-faint);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .12s, color .12s, border-color .12s;
+}
+/* Only while you are looking at the log: an always-lit delete button over a
+   pane of text invites the wrong click. */
+.log-wrap:hover .log-clear { opacity: 1; }
+.log-clear:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.log-clear svg { width: 13px; height: 13px; display: block; }
 
 .log {
     margin: 0;

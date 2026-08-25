@@ -202,10 +202,11 @@
     <details class="drawer-section grow">
         <summary><h3>Log</h3></summary>
         <div class="section-body">
-            <div class="log-tools">
-                <button id="clear-log" class="btn ghost small">Clear</button>
+            <div class="log-wrap">
+                <pre id="log" class="log"></pre>
+                <button id="clear-log" class="log-clear" data-icon="trash"
+                        title="Clear the log" aria-label="Clear the log"></button>
             </div>
-            <pre id="log" class="log"></pre>
         </div>
     </details>
 </aside>
