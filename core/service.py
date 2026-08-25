@@ -821,14 +821,24 @@ class LauncherService:
         info["short_streak"] = streak
 
         how = "closed" if code == 0 else f"exited (code {code})"
-        self.emit("running", "relog", pid=pid, email=info["email"],
-                  message=f"{who} {how} — signing back in...")
+        self._log(f"[relog] {who} {how} — signing back in")
+
+        # Emitted under its own op, with an email, exactly like a launch: that
+        # is what lights the progress bar at the bottom and puts a name on it.
+        # Under "running" it would short-circuit in the front end and the user
+        # would watch a relog happen with nothing on screen saying so.
+        self.emit("relog", "starting", email=info["email"],
+                  message=f"Relogging {who}...")
         self._emit_running()
         try:
             self._relaunch(info)
         except Exception as exc:
-            self.emit("running", "relog_failed", email=info["email"], error=str(exc),
-                      message=f"Auto-relog for {who} failed: {exc}")
+            self.emit("relog", "error", done=True, ok=False, email=info["email"],
+                      error=str(exc), message=f"Auto-relog for {who} failed: {exc}")
+        finally:
+            # Always: a cancelled or failed relog must not leave the bar
+            # spinning for the rest of the session.
+            self.emit("relog", "settled", email=info["email"])
             self._emit_running()
 
     def _still_running(self, pid: int) -> bool:
@@ -850,7 +860,7 @@ class LauncherService:
         # enough that the user can turn auto-relog off while this is in flight,
         # and pressing the button has to mean what it says.
         if not self.wants_relog(info["email"]):
-            self.emit("running", "relog_cancelled", email=info["email"],
+            self.emit("relog", "cancelled", email=info["email"],
                       message=f"{prefs.display_name(info['email'])}: "
                               f"auto-relog turned off, not signing back in.")
             return
@@ -862,7 +872,7 @@ class LauncherService:
         pid = self._spawn_game(exe, ticket,
                                launch_mod.get_auth_server(info["region"]),
                                new_info, log=self._logger("relog", info["email"]))
-        self.emit("running", "relogged", pid=pid, email=info["email"],
+        self.emit("relog", "done", done=True, ok=True, pid=pid, email=info["email"],
                   message=f"{prefs.display_name(info['email'])} signed back in (pid {pid}).")
 
     def set_auto_relog(self, email: str, enabled: bool = True) -> dict:

@@ -107,6 +107,10 @@
         const password = textInput('password', account.has_saved_password
             ? 'Saved — type to change it' : 'Not saved');
 
+        let colour = account.color || PALETTE[0];
+        const colourField = field('Name colour',
+                                  swatches(colour, (c) => { colour = c; }));
+
         const flagged = document.createElement('input');
         flagged.type = 'checkbox';
         flagged.checked = !!account.flagged;
@@ -129,6 +133,7 @@
             field('Server', region),
             field('Group', group),
             field('Password', password),
+            colourField,
             flaggedLabel, signout,
         );
 
@@ -139,6 +144,7 @@
                     name: name.value.trim(),
                     region: region.value,
                     group: group.value || null,
+                    color: colour,
                     flagged: flagged.checked,
                 });
                 if (password.value) {

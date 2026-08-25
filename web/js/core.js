@@ -103,6 +103,12 @@ window.App = window.App || {};
     const LOG_MAX_LINES = 500;
     const logLines = [];
 
+    App.clearLog = function () {
+        logLines.length = 0;
+        const log = $('log');
+        if (log) log.textContent = '';
+    };
+
     App.logLine = function (text) {
         logLines.push(String(text));
         if (logLines.length > LOG_MAX_LINES) logLines.shift();

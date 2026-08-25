@@ -130,6 +130,29 @@ def _claim_linux_app_id() -> None:
         pass
 
 
+def _claim_windows_app_id() -> None:
+    """Give the process its own taskbar identity.
+
+    Without this, Windows ties the taskbar button to the executable's path and
+    paints it with the icon compiled into the .exe - so the live icon set with
+    WM_SETICON reaches the title bar and alt-tab but never the taskbar, and the
+    cube there stays the default green whatever accent is on.
+
+    Declaring an explicit AppUserModelID detaches the button from the file, and
+    the window's own ICON_BIG becomes what the taskbar shows. See
+    core/winicon.py for the other half.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "ASieSer.TroveAccountsHub")
+    except Exception:
+        pass
+
+
 def _make_logger(window_ref: dict):
     """The service's log line: to the console if there is one, and to the panel.
 
@@ -173,6 +196,7 @@ def main() -> int:
                       f"If this is the packaged build, the executable is "
                       f"incomplete; download it again.")
 
+    _claim_windows_app_id()          # before the taskbar button exists
     _claim_linux_app_id()            # before creating any window, too
     scale = _enable_dpi_awareness()  # before creating any window
     width, height = _window_size(scale)

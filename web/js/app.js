@@ -188,6 +188,8 @@
         for (const b of document.querySelectorAll('[data-folder]')) {
             b.addEventListener('click', () => App.call('open_folder', b.dataset.folder));
         }
+        $('clear-log').addEventListener('click', App.clearLog);
+
         $('rescan').addEventListener('click', async () => {
             const result = await App.call('rescan_installs');
             if (result) {

@@ -143,7 +143,7 @@ group. Each card carries its own buttons:
 | | |
 | --- | --- |
 | **Delete** | Removes the account, its saved password and its cached ticket. |
-| **Edit** | Display name, server, group, password, and a flag for accounts you want struck through. |
+| **Edit** | Display name and its colour, server, group, password, and a flag for accounts you want struck through. |
 | **Test login** | Signs in against Trion without launching, so you know a password works before you need it. |
 | **Auto-relog** | Per account. Lit means on. |
 | **Launch** | Starts the game. Turns into **Stop** while it runs. |
@@ -151,6 +151,10 @@ group. Each card carries its own buttons:
 Each account carries its own region (NA / EU / PTS), so a PTS account and a
 live one can sit side by side. NA and EU share the Live install; PTS needs its
 own folder.
+
+Each group's header wears the colour you gave it, so the board tells you at a
+glance where one group ends and the next starts. The cards themselves stay
+unframed: boxing those as well just buries what you actually read.
 
 Account status lives on the card and nowhere else — a group header does not
 summarise it, because "2 running" there says nothing about *which* two and
@@ -212,6 +216,10 @@ you picked today.
 On Windows the icon in the title bar and on the taskbar follows the accent too.
 On Linux it stays the default green cube: Wayland has no protocol for a window
 to set its own icon, so the icon comes from the `.desktop` entry.
+
+Settings also carries a **Log** of everything the launcher does — the same lines
+it would print to a console, which the packaged build does not have. It keeps
+the last 500 and has a Clear button.
 
 ---
 

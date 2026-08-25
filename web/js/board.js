@@ -37,16 +37,28 @@
             const list = App.accountsOf(group.id);
             // With a filter on, a group with no matches adds nothing.
             if (App.filterText && !list.length) continue;
-            rows.appendChild(groupHead(group, list));
-            if (group.collapsed) continue;
-            appendAccounts(rows, list, group.id);
+            // The group's colour frames the whole thing - header, cards and
+            // buttons - rather than sitting in a dot nobody notices. The CSS
+            // derives border and wash from this one custom property.
+            const box = el('div', 'group' + (group.collapsed ? ' folded' : ''));
+            box.style.setProperty('--group', group.color || 'var(--line-hi)');
+            box.appendChild(groupHead(group, list));
+            if (!group.collapsed) appendAccounts(box, list, group.id);
+            rows.appendChild(box);
         }
 
         const loose = App.accountsOf(null);
         if (loose.length || (!App.filterText && App.state.groups.length)) {
-            rows.appendChild(looseHead(loose));
+            // Ungrouped gets the same frame so the board reads as one rhythm,
+            // but in the neutral line colour: it is not a group and has no
+            // colour of its own to wear.
+            const box = el('div', 'group loose' + (App.looseCollapsed ? ' folded' : ''));
+            box.appendChild(looseHead(loose));
+            if (!App.looseCollapsed) appendAccounts(box, loose, null);
+            rows.appendChild(box);
+        } else if (!App.looseCollapsed) {
+            appendAccounts(rows, loose, null);
         }
-        if (!App.looseCollapsed) appendAccounts(rows, loose, null);
 
         // Somewhere to drag an account out of its group.
         if (!App.filterText) {
