@@ -55,19 +55,48 @@
     }
     App.clubOf = clubOf;
 
-    /** Saved accents: six-digit hex only, lowercase, no duplicates and none of
-     *  the fixed palette (those are already one click away). */
+    /** The saved colours: six-digit hex only, lowercase, no duplicates.
+     *
+     *  One list, shared by the three pickers - the accent, an account's name
+     *  and a group's colour. It deliberately does NOT filter against any fixed
+     *  palette: the three have different ones, so dropping the accent presets
+     *  here made colours vanish from the other two. What keeps presets out of
+     *  the list is applyTheme, which does not save an accent that is already a
+     *  preset of its own row. */
     function normalizeCustoms(list) {
-        const presets = ACCENTS.map((a) => a.value.toLowerCase());
         const seen = [];
         for (const raw of Array.isArray(list) ? list : []) {
             const value = String(raw).toLowerCase();
             if (!/^#[0-9a-f]{6}$/.test(value)) continue;
-            if (presets.includes(value) || seen.includes(value)) continue;
+            if (seen.includes(value)) continue;
             seen.push(value);
         }
         return seen.slice(-MAX_CUSTOMS);
     }
+
+    /** The saved colours, for whoever is drawing a picker. */
+    App.savedColours = function () {
+        return normalizeCustoms((App.state.theme || {}).customs);
+    };
+
+    /** Keep a colour, and persist it. Returns the list as it ended up. */
+    App.rememberColour = function (hex) {
+        const theme = App.state.theme || {};
+        const customs = normalizeCustoms((theme.customs || []).concat([hex]));
+        App.state.theme = { ...theme, customs: customs };
+        App.call('save_prefs', { theme: App.state.theme });
+        return customs;
+    };
+
+    /** Forget one. */
+    App.forgetColour = function (hex) {
+        const theme = App.state.theme || {};
+        const customs = normalizeCustoms(theme.customs)
+            .filter((c) => c !== String(hex).toLowerCase());
+        App.state.theme = { ...theme, customs: customs };
+        App.call('save_prefs', { theme: App.state.theme });
+        return customs;
+    };
 
     // --- contrast ---------------------------------------------------------
 
@@ -226,7 +255,13 @@
         // A custom accent in use is saved even if the add button was never
         // pressed: it is the one on screen, and losing it when trying the next
         // colour was exactly the problem.
-        const customs = normalizeCustoms((theme && theme.customs || []).concat([own]));
+        // The accent in use is kept so it is not lost when trying another, but
+        // only when it is not already a swatch in its own fixed row - otherwise
+        // the presets would eat every saved slot.
+        const isPreset = ACCENTS.some(
+            (a) => a.value.toLowerCase() === String(own).toLowerCase());
+        const customs = normalizeCustoms(
+            (theme && theme.customs || []).concat(isPreset ? [] : [own]));
         const stars = !theme || theme.stars !== false;
         const tint = (theme && typeof theme.tint === 'number') ? theme.tint : 0.45;
         const font = (theme && FONTS[theme.font]) ? theme.font : 'system';
@@ -330,7 +365,7 @@
         const swatch = (value, title) => {
             const dot = document.createElement('button');
             dot.type = 'button';
-            dot.className = 'theme-swatch' + (value.toLowerCase() === accent ? ' active' : '');
+            dot.className = 'swatch' + (value.toLowerCase() === accent ? ' active' : '');
             dot.style.background = value;
             dot.title = title;
             dot.disabled = !!club;
@@ -370,7 +405,7 @@
 
         // Add button: a dotted slot with a "+" and, invisible on top of it, the
         // native colour input, which is what opens the picker dialog.
-        const adder = el('label', 'theme-add', '<span>+</span>');
+        const adder = el('label', 'swatch-add', '<span>+</span>');
         adder.title = customs.length >= MAX_CUSTOMS
             ? `Saves a new colour and forgets the oldest (${MAX_CUSTOMS} slots)`
             : 'Save a custom colour';

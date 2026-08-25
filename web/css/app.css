@@ -701,28 +701,34 @@ body > * { position: relative; z-index: 1; }
     user-select: text;
 }
 
-/* --- accent picker ------------------------------------------------------- */
+/* --- colour picker ------------------------------------------------------
+   One control, three places: the accent in Settings, an account's name and a
+   group's colour. A fixed palette on top, the colours you have saved below,
+   and the add button at the end of that second row. The saved list is shared,
+   so a colour kept for one is there for the others.
+   --- ---------------------------------------------------- */
 
-.theme-swatches { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
-.theme-swatch {
+.swatch-rows { display: flex; flex-direction: column; gap: 7px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.swatch {
     width: 22px; height: 22px;
     border-radius: var(--r);
     border: 1px solid var(--line-hi);
     cursor: pointer;
     padding: 0;
 }
-.theme-swatch.active { border-color: var(--text); }
+.swatch.active { border-color: var(--text); }
 /* With a club theme the club fixes the accent: the controls are visible but
    not touchable. The tint stays free - it is intensity, not colour. */
-.theme-swatches.locked { opacity: .45; pointer-events: none; }
+.swatches.locked { opacity: .45; pointer-events: none; }
 
 /* Second row: the colours the user has saved. It is slightly inset from the
    fixed palette so the two read as different things. */
-.theme-swatches.customs { margin-top: -2px; }
+.swatches.customs { margin-top: -2px; }
 
 /* The x for forgetting a colour appears on hover, inside the swatch itself.
    The accent in use does not carry one: while it is on it stays saved. */
-.theme-swatch { position: relative; }
+.swatch { position: relative; }
 .swatch-x {
     position: absolute;
     top: -5px; right: -5px;
@@ -737,13 +743,13 @@ body > * { position: relative; z-index: 1; }
     border: 1px solid var(--line-hi);
     color: var(--text-dim);
 }
-.theme-swatch:hover .swatch-x { display: flex; }
-.theme-swatch.active .swatch-x { display: none; }
+.swatch:hover .swatch-x { display: flex; }
+.swatch.active .swatch-x { display: none; }
 .swatch-x:hover { color: var(--text); border-color: var(--text-faint); }
 
 /* Add colour: a dotted slot with a "+" and, on top of it, the invisible
    native picker - which is what opens the system dialog. */
-.theme-add {
+.swatch-add {
     position: relative;
     width: 22px; height: 22px;
     border-radius: var(--r);
@@ -757,8 +763,8 @@ body > * { position: relative; z-index: 1; }
     line-height: 1;
     cursor: pointer;
 }
-.theme-add:hover { border-color: var(--text-faint); color: var(--text); }
-.theme-add input {
+.swatch-add:hover { border-color: var(--text-faint); color: var(--text); }
+.swatch-add input {
     position: absolute;
     inset: 0;
     width: 100%; height: 100%;
@@ -818,16 +824,6 @@ input:focus, select:focus { border-color: var(--accent); }
     cursor: pointer;
 }
 input[type="range"] { accent-color: var(--accent); cursor: pointer; }
-
-.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
-.swatch {
-    width: 22px; height: 22px;
-    border-radius: var(--r);
-    border: 1px solid var(--line-hi);
-    cursor: pointer;
-    padding: 0;
-}
-.swatch.active { border-color: var(--text); }
 
 /* --- tooltip ------------------------------------------------------------- */
 

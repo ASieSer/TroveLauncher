@@ -71,19 +71,83 @@
     const PALETTE = ['#22c55e', '#38bdf8', '#a371f7', '#f59e0b', '#f43f5e',
                      '#14b8a6', '#ec4899', '#6366f1', '#84cc16', '#94a3b8'];
 
+    /** The colour picker used by the account and group dialogs.
+     *
+     *  Two rows, the same shape as the accent picker in Settings: the fixed
+     *  palette on top, the colours you have saved below, and the add button at
+     *  the end of that second row. The saved list is the same one - a colour
+     *  kept here shows up for the accent too, and the other way round.
+     */
     function swatches(current, onPick) {
-        const wrap = el('div', 'swatches');
-        for (const colour of PALETTE) {
-            const dot = el('button', 'swatch' + (colour === current ? ' active' : ''));
-            dot.type = 'button';
-            dot.style.background = colour;
-            dot.addEventListener('click', () => {
-                for (const other of wrap.children) other.classList.remove('active');
-                dot.classList.add('active');
-                onPick(colour);
+        const wrap = el('div', 'swatch-rows');
+        const fixed = el('div', 'swatches');
+        const saved = el('div', 'swatches customs');
+        wrap.append(fixed, saved);
+
+        let chosen = String(current || '').toLowerCase();
+
+        const mark = () => {
+            for (const dot of wrap.querySelectorAll('.swatch')) {
+                dot.classList.toggle('active',
+                    (dot.dataset.colour || '') === chosen);
+            }
+        };
+
+        const pick = (colour) => {
+            chosen = String(colour).toLowerCase();
+            mark();
+            onPick(colour);
+        };
+
+        const dot = (colour, forgettable) => {
+            const b = el('button', 'swatch');
+            b.type = 'button';
+            b.dataset.colour = String(colour).toLowerCase();
+            b.style.background = colour;
+            b.title = String(colour).toUpperCase();
+            b.addEventListener('click', () => pick(colour));
+            if (forgettable) {
+                // The x sits inside the swatch and stops the click from also
+                // applying the colour it is removing.
+                const forget = el('span', 'swatch-x', '&times;');
+                forget.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    App.forgetColour(colour);
+                    drawSaved();
+                });
+                b.appendChild(forget);
+            }
+            return b;
+        };
+
+        for (const colour of PALETTE) fixed.appendChild(dot(colour, false));
+
+        function drawSaved() {
+            saved.innerHTML = '';
+            for (const colour of App.savedColours()) {
+                saved.appendChild(dot(colour, true));
+            }
+
+            const adder = el('label', 'swatch-add', '<span>+</span>');
+            adder.title = 'Save a colour of your own';
+            const picker = document.createElement('input');
+            picker.type = 'color';
+            picker.value = /^#[0-9a-f]{6}$/.test(chosen) ? chosen : PALETTE[0];
+            // While the dialog is open the colour follows live; it is only
+            // saved once accepted, so the row does not fill with attempts.
+            picker.addEventListener('input', () => pick(picker.value));
+            picker.addEventListener('change', () => {
+                App.rememberColour(picker.value);
+                pick(picker.value);
+                drawSaved();
             });
-            wrap.appendChild(dot);
+            adder.appendChild(picker);
+            saved.appendChild(adder);
+            mark();
         }
+
+        drawSaved();
+        mark();
         return wrap;
     }
 
