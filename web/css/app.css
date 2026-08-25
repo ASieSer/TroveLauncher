@@ -266,6 +266,9 @@ body > * { position: relative; z-index: 1; }
     background: color-mix(in srgb, var(--group) 7%, transparent);
 }
 .group-caret {
+    /* Set in from the handle: the two used to sit one gap apart and read as a
+       single smudge at the left edge. */
+    margin-left: 4px;
     width: 10px; height: 10px; flex: none;
     display: inline-flex;
     align-items: center;
@@ -485,7 +488,19 @@ body > * { position: relative; z-index: 1; }
 
 /* --- drag and drop ------------------------------------------------------- */
 
-.grip { width: 10px; flex: none; color: var(--text-faint); opacity: 0; cursor: grab; }
+/* The handle is what you have to hit to drag a group, so it is sized to be
+   hit. The svg needs its own rule: without one it renders at whatever it likes
+   inside the span and the dots came out at 10px, smaller than the caret. */
+.grip {
+    width: 15px; height: 15px; flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    opacity: 0;
+    cursor: grab;
+}
+.grip svg { display: block; width: 100%; height: 100%; }
 .group-head:hover .grip { opacity: .45; }
 .group-head.dragging { opacity: .35; }
 .drop-into { background: color-mix(in srgb, var(--accent) 8%, transparent); }
