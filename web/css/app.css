@@ -490,6 +490,13 @@ body > * { position: relative; z-index: 1; }
 .group-head.dragging { opacity: .35; }
 .drop-into { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
+/* Where a dragged group will land: a line above or below the group under the
+   cursor. These classes existed but had no styling at all, so dragging a group
+   gave no clue where it was going. box-shadow rather than a border, so nothing
+   shifts by two pixels while you drag. */
+.group.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.group.drop-after { box-shadow: 0 2px 0 0 var(--accent); }
+
 .dropzone {
     margin: 10px 16px;
     padding: 12px;

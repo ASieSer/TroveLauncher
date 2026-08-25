@@ -35,6 +35,17 @@
         return { after: event.clientX > box.left + box.width / 2 };
     }
 
+    /** Does the dragged thing go BELOW the one under the cursor?
+     *
+     *  Groups stack vertically, so unlike cards - which flow left to right in
+     *  the grid and use the X axis - what decides here is Y. Without this a
+     *  group could only ever land above its target, which made dragging one
+     *  downwards do nothing at all and put the last position out of reach. */
+    function dropBelow(node, event) {
+        const box = node.getBoundingClientRect();
+        return event.clientY > box.top + box.height / 2;
+    }
+
     /** A group's drop zone: invisible until a drag starts, at which point it
      *  appears as a dashed outline. It is what makes dropping into an empty
      *  group possible, where there is no card to aim at. */
@@ -149,23 +160,55 @@
             App.drag = null;
             App.clearDropMarks();
         });
+        // Only accounts are dropped ON the header. A group dropped on another
+        // group is handled by the whole box - see wireGroupBox.
         head.addEventListener('dragover', (e) => {
-            if (!App.drag) return;
-            if (App.drag.kind === 'group' && App.drag.id === group.id) return;
+            if (!App.drag || App.drag.kind !== 'account') return;
             // If the account already lives in this group the header offers
             // nothing: it is not highlighted, so it does not invite a drop.
-            if (App.drag.kind === 'account' && inGroup(App.drag.id, group.id)) return;
+            if (inGroup(App.drag.id, group.id)) return;
             e.preventDefault();
+            e.stopPropagation();
             App.clearDropMarks();
-            head.classList.add(App.drag.kind === 'account' ? 'drop-into' : 'drop-before');
+            head.classList.add('drop-into');
         });
         head.addEventListener('drop', (e) => {
-            if (!App.drag) return;
+            if (!App.drag || App.drag.kind !== 'account') return;
             e.preventDefault();
+            e.stopPropagation();
             App.clearDropMarks();
-            if (App.drag.kind === 'group') { dropGroup(group.id); return; }
             if (inGroup(App.drag.id, group.id)) return;   // already here: nothing to move
             App.dropAccount(null, group.id, 'group');
+        });
+    };
+
+    /** The whole group box takes a group dropped on it, not just its header.
+     *
+     *  The header is 34 pixels tall and the box around it is most of what you
+     *  see, so aiming at the header alone meant most of a group was dead space.
+     *  Which half of the box the cursor is in decides whether the dragged group
+     *  lands above or below this one. */
+    App.wireGroupBox = function (box, group) {
+        const mine = () => App.drag && App.drag.kind === 'group'
+            && App.drag.id !== group.id;
+
+        box.addEventListener('dragover', (e) => {
+            if (!mine()) return;
+            e.preventDefault();
+            App.clearDropMarks();
+            box.classList.add(dropBelow(box, e) ? 'drop-after' : 'drop-before');
+        });
+        box.addEventListener('dragleave', (e) => {
+            // Only when the pointer really left the box, not on the way over a
+            // child: dragleave fires for those too and would flicker the mark.
+            if (e.target === box) box.classList.remove('drop-before', 'drop-after');
+        });
+        box.addEventListener('drop', (e) => {
+            if (!mine()) return;
+            e.preventDefault();
+            const after = dropBelow(box, e);
+            App.clearDropMarks();
+            dropGroup(group.id, after);
         });
     };
 
@@ -202,12 +245,13 @@
         });
     };
 
-    function dropGroup(targetId) {
+    function dropGroup(targetId, after) {
         const moved = App.state.groups.find((g) => g.id === App.drag.id);
         if (!moved) return;
         const rest = App.state.groups.filter((g) => g.id !== moved.id);
         const at = rest.findIndex((g) => g.id === targetId);
-        rest.splice(at === -1 ? rest.length : at, 0, moved);
+        const index = at === -1 ? rest.length : (after ? at + 1 : at);
+        rest.splice(index, 0, moved);
         App.state.groups = rest;
         App.render();
         App.call('reorder', { groups: App.state.groups.map((g) => g.id) });

@@ -44,6 +44,7 @@
             box.style.setProperty('--group', group.color || 'var(--line-hi)');
             box.appendChild(groupHead(group, list));
             if (!group.collapsed) appendAccounts(box, list, group.id);
+            App.wireGroupBox(box, group);
             rows.appendChild(box);
         }
 
