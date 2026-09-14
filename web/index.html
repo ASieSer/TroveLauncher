@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Trove Accounts Hub</title>
+    <link rel="stylesheet" href="css/app.css">
+    <!-- Optional local additions, absent from a plain checkout. Both files
+         are ignored by git and the packaged build leaves them out unless it
+         is asked for them; a missing one is a 404 nobody sees. -->
+    <link rel="stylesheet" href="css/local.css">
+</head>
+<body>
+
+<!-- The background image, when there is one. An element of its own rather than
+     a background on the body: blur is a filter, and a filter applies to a whole
+     element - there is no blurring just the background behind the interface. -->
+<div id="wallpaper"></div>
+
+<header class="appbar">
+    <span class="brand" id="brand"></span>
+    <div class="appbar-right">
+        <button id="install-live" class="install-chip" title="Live installation"></button>
+        <button id="install-pts" class="install-chip hidden" title="PTS installation"></button>
+    </div>
+</header>
+
+<div class="shell">
+
+<!-- The three places the application has. Icon and name both: the icons alone
+     were a guess, and there is room for the words. -->
+<nav class="sidebar" id="sidebar">
+    <!-- The rail keeps its width in the layout; this is what widens over the
+         pane, so nothing underneath moves when it opens. -->
+    <div class="sidebar-inner">
+        <button class="side-item active" data-pane="accounts">
+            <span class="side-icon" data-icon="accounts"></span>
+            <span class="side-label">Accounts</span>
+        </button>
+        <button class="side-item" data-pane="mods">
+            <span class="side-icon" data-icon="mods"></span>
+            <span class="side-label">Mods</span>
+        </button>
+        <button class="side-item" data-pane="log">
+            <span class="side-icon" data-icon="terminal"></span>
+            <span class="side-label">Log</span>
+        </button>
+        <button class="side-item" data-pane="settings">
+            <span class="side-icon" data-icon="gear"></span>
+            <span class="side-label">Settings</span>
+        </button>
+        <button class="side-item side-pin" id="sidebar-pin">
+            <span class="side-icon" data-icon="chevrons"></span>
+            <span class="side-label">Collapse</span>
+        </button>
+    </div>
+</nav>
+
+<div class="panes">
+
+<section class="pane" id="pane-accounts">
+<div class="toolbar">
+    <div class="toolbar-left">
+        <button id="add-account" class="btn primary">Add account</button>
+        <button id="add-group" class="btn">Create group</button>
+    </div>
+
+    <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" id="filter" placeholder="Filter accounts…" autocomplete="off">
+    </div>
+
+    <div class="toolbar-right">
+        <span class="counts" id="counts"></span>
+        <button id="toggle-emails" class="icon-btn" aria-label="Toggle emails"></button>
+    </div>
+</div>
+
+<main class="board">
+    <div id="rows" class="board-body"></div>
+    <div id="empty-state" class="empty hidden">
+        <p>No accounts yet.</p>
+        <button class="btn primary" data-action="add-first">Add account</button>
+    </div>
+</main>
+
+<footer class="statusbar">
+    <div class="left">
+        <span class="app-name"><b>Trove Accounts Hub</b> <span id="app-version"></span></span>
+        <span id="sweep"></span>
+        <div id="progress" class="hidden" style="display:flex;align-items:center;gap:10px">
+            <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+        </div>
+        <span id="status-msg" class="msg"></span>
+    </div>
+</footer>
+
+<!-- ===================== Settings panel ===================== -->
+</section>
+
+<section class="pane hidden" id="pane-mods">
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <button id="mods-refresh" class="btn">Refresh</button>
+            <button id="mods-updates" class="btn">Check for updates</button>
+            <button id="mods-update-all" class="btn info hidden">Update all</button>
+            <button id="mods-folder" class="btn">Open folder</button>
+        </div>
+        <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="mod-filter" placeholder="Filter mods…" autocomplete="off">
+        </div>
+    </div>
+    <!-- Second row: what NARROWS the list, and what the list amounts to. The
+         top row is for what you DO to the folder. Keeping the two apart is
+         what lets the tags be a row of buttons instead of a dropdown. -->
+    <div class="subbar">
+        <div class="chips" id="mods-filters"></div>
+        <span class="counts" id="mod-counts"></span>
+        <label class="compact-toggle">
+            <span>Compact</span>
+            <button type="button" id="mods-compact" class="switch"
+                    role="switch" aria-checked="false"><span class="knob"></span></button>
+        </label>
+    </div>
+    <div class="board-body" id="mod-list"></div>
+    <div id="mods-empty" class="empty hidden"><p></p></div>
+</section>
+
+<section class="pane hidden" id="pane-log">
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <button id="clear-log" class="btn ghost">Clear</button>
+        </div>
+        <div class="toolbar-right">
+            <span class="counts" id="log-count"></span>
+        </div>
+    </div>
+    <div class="log-wrap"><pre id="log" class="log"></pre></div>
+</section>
+
+<aside id="drawer" class="drawer pane hidden">
+    <div class="drawer-head">
+        <h2>Settings</h2>
+    </div>
+
+    <details class="drawer-section" open>
+        <summary><h3>Appearance</h3></summary>
+        <div class="section-body">
+            <div class="field">
+                <label>Font</label>
+                <div class="segmented">
+                    <button data-font="system">System</button>
+                    <button data-font="quicksand">Quicksand</button>
+                    <button data-font="comfortaa">Comfortaa</button>
+                    <button data-font="quantico">Quantico</button>
+                </div>
+            </div>
+            <div class="field">
+                <label for="theme-club">Club theme</label>
+                <select id="theme-club">
+                    <option value="">None</option>
+                    <option value="mystic-cave">Mystic Cave</option>
+                    <option value="arsyn">Arsyn</option>
+                    <option value="sayro">Sayro</option>
+                </select>
+            </div>
+            <label class="check">
+                <input type="checkbox" id="opt-stars">
+                <span>Background particles</span>
+            </label>
+            <div class="field">
+                <label>Logo</label>
+                <div class="wallpaper-row">
+                    <button id="logo-pick" class="btn">Choose image…</button>
+                    <button id="logo-clear" class="btn ghost hidden">Remove</button>
+                </div>
+                <label class="check" id="logo-icon-row">
+                    <input type="checkbox" id="logo-as-icon">
+                    <span>Use it for the window and taskbar icon too</span>
+                </label>
+                <div class="recent hidden" id="logo-recent"></div>
+                <p class="note">Replaces the mark in the top bar.</p>
+                <p class="note hidden" id="logo-locked-note">The club theme brings its own
+                    mark. Pick <em>None</em> to use your own again.</p>
+            </div>
+            <div class="field">
+                <label>Background image</label>
+                <div class="wallpaper-row">
+                    <button id="wallpaper-pick" class="btn">Choose image…</button>
+                    <button id="wallpaper-clear" class="btn ghost hidden">Remove</button>
+                </div>
+                <div class="recent hidden" id="wallpaper-recent"></div>
+                <p class="note hidden" id="wallpaper-locked-note">The club theme brings its
+                    own background. Pick <em>None</em> to use your own again.</p>
+            </div>
+            <div class="field hidden" id="wallpaper-knobs">
+                <label>Dim - <span id="wallpaper-dim-value"></span></label>
+                <input type="range" id="wallpaper-dim" min="0" max="0.9" step="0.05">
+                <label>Blur - <span id="wallpaper-blur-value"></span></label>
+                <input type="range" id="wallpaper-blur" min="0" max="24" step="1">
+            </div>
+            <div class="field"><label>Accent</label>
+                <div class="swatches" id="theme-swatches"></div>
+                <div class="swatches customs" id="theme-customs"></div>
+            </div>
+            <p class="note hidden" id="accent-locked-note">The club theme sets the accent. Pick
+                <em>None</em> to choose your own colour again.</p>
+            <div class="field">
+                <label>Tint strength - <span id="tint-value"></span></label>
+                <input type="range" id="theme-tint" min="0" max="1" step="0.05">
+            </div>
+            <p class="note">A club theme swaps the launcher's mark and name for the club's and
+                fixes the accent to its colour; tint strength stays yours. The accent tints every
+                surface and marks the primary action and live states, and at 0% tint the interface
+                is neutral grey.</p>
+        </div>
+    </details>
+
+    <details class="drawer-section">
+        <summary><h3>Maintenance</h3></summary>
+        <div class="section-body">
+            <div class="maint-row">
+                <div class="maint-label">
+                    <strong>Live</strong>
+                    <span id="version-live"></span>
+                </div>
+                <div class="btn-row">
+                    <button class="act" data-maint="check" data-target="live" data-icon="refresh"
+                            title="Check for updates"></button>
+                    <button class="act" data-maint="update" data-target="live" data-icon="download"
+                            title="Download the latest version"></button>
+                    <button class="act" data-maint="repair" data-target="live" data-icon="wrench"
+                            title="Re-download every file in the manifest"></button>
+                </div>
+            </div>
+            <div class="maint-row" id="maint-pts">
+                <div class="maint-label">
+                    <strong>PTS</strong>
+                    <span id="version-pts"></span>
+                </div>
+                <div class="btn-row">
+                    <button class="act" data-maint="check" data-target="pts" data-icon="refresh"
+                            title="Check for updates"></button>
+                    <button class="act" data-maint="update" data-target="pts" data-icon="download"
+                            title="Download the latest version"></button>
+                    <button class="act" data-maint="repair" data-target="pts" data-icon="wrench"
+                            title="Re-download every file in the manifest"></button>
+                </div>
+            </div>
+            <p class="note">Repair re-downloads the whole manifest. It never deletes files, so your mods stay untouched.</p>
+        </div>
+    </details>
+
+    <details class="drawer-section">
+        <summary><h3>On launch</h3></summary>
+        <div class="section-body">
+            <label class="check">
+                <input type="checkbox" id="opt-update-first">
+                <span>Update before launching</span>
+            </label>
+            <label class="check">
+                <input type="checkbox" id="opt-remember-password">
+                <span>Save account passwords</span>
+            </label>
+            <p class="note" id="vault-note"></p>
+        </div>
+    </details>
+
+    <details class="drawer-section hidden" id="wine-section">
+        <summary><h3>Wine</h3></summary>
+        <div class="section-body">
+            <p class="note" id="wine-status"></p>
+            <p class="note bad hidden" id="wine-warning"></p>
+            <div class="field">
+                <label for="wine-binary">Wine binary</label>
+                <input type="text" id="wine-binary" spellcheck="false"
+                       placeholder="Auto-detected (the prefix's runner)">
+            </div>
+            <div id="wine-runners"></div>
+            <div class="field">
+                <label for="wine-prefix">Wine prefix</label>
+                <input type="text" id="wine-prefix" spellcheck="false"
+                       placeholder="Taken from the game folder">
+            </div>
+            <p class="note">Trove is a Windows game, so on Linux it lives inside a Wine or
+                Proton prefix and can only be handed its ticket from in there. Leave both
+                empty and they are worked out on their own: the prefix from the game folder
+                you picked, and the runner from that prefix - a Proton prefix is launched
+                with its own Proton, which is also the build that carries what Trove's
+                anti-cheat loader needs. Only if the prefix says nothing does the Wine in
+                your PATH get used.</p>
+        </div>
+    </details>
+
+    <details class="drawer-section">
+        <summary><h3>Folders</h3></summary>
+        <div class="section-body">
+            <div id="folder-list"></div>
+            <div class="btn-row">
+                <button class="btn small ghost" id="rescan">Rescan installs</button>
+            </div>
+        </div>
+    </details>
+</aside>
+
+</div><!-- .panes -->
+</div><!-- .shell -->
+
+<!-- ===================== Generic modal ===================== -->
+<div id="modal-backdrop" class="backdrop hidden">
+    <div class="modal" id="modal">
+        <h3 id="modal-title"></h3>
+        <div id="modal-body"></div>
+        <div class="modal-actions">
+            <button id="modal-cancel" class="btn ghost">Cancel</button>
+            <button id="modal-confirm" class="btn primary">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== Message dialog =====================
+     Its own layer, so it can sit ON TOP of the generic modal instead of
+     replacing it: an error while adding an account must not throw away what
+     you had typed. -->
+<div id="alert-backdrop" class="backdrop hidden">
+    <div class="modal alert">
+        <h3 id="alert-title"></h3>
+        <p id="alert-text"></p>
+        <div class="modal-actions">
+            <button id="alert-cancel" class="btn ghost hidden">Cancel</button>
+            <button id="alert-ok" class="btn primary">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- Passing notices, stacked in the corner. -->
+<div class="toasts" id="toasts"></div>
+
+<!-- Floating tooltip (positioned by JS; outside the board so nothing clips it) -->
+<div id="tooltip" class="tooltip hidden"></div>
+
+<!-- Installation context menu -->
+<div id="install-menu" class="popover hidden"></div>
+
+<!-- Plain scripts, not ES modules: the page loads over file:// and Chromium
+     refuses module scripts from that origin. Order matters - core.js creates
+     the window.App namespace and app.js starts everything. -->
+<script src="js/core.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/dragdrop.js"></script>
+<script src="js/modals.js"></script>
+<script src="js/actions.js"></script>
+<script src="js/board.js"></script>
+<script src="js/mods.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/app.js"></script>
+<!-- Loaded last so it can build on everything above. See the note in the head. -->
+<script src="js/local.js"></script>
+</body>
+</html>

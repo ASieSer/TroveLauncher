@@ -1,0 +1,43 @@
+# --- Python ---------------------------------------------------------------
+# Bytecode regenerates itself and depends on each person's Python version:
+# versioning it only produces conflicts on every commit.
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments. On Linux they are created with --system-site-packages
+# (see the README), so everyone's differs and none belongs in the repository.
+.venv/
+venv/
+env/
+
+# --- Build products -------------------------------------------------------
+# PyInstaller's working folder and its output.
+/build/
+/dist/
+
+# Auto-generated specs are throwaway; ours is the build recipe and is versioned.
+*.spec
+!TroveAccountsHub.spec
+
+# NOTE: native/troveinject.exe IS versioned, binary though it is. Nobody playing
+# on Linux should need a cross-compiler; the source sits beside it and
+# tools/build_helper.sh reproduces it.
+
+# The generated icon is versioned too, for the same reason: building the
+# executable should not require Pillow. tools/make_icon.py regenerates it.
+
+# --- Editors and OS -------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# --- Local additions ------------------------------------------------------
+# Two optional files the interface loads if they are there. They are not part
+# of what is published, and the spec keeps them out of a build unless TAH_LOCAL
+# is set, so a release built here cannot carry them by accident.
+/web/js/local.js
+/web/css/local.css

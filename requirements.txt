@@ -1,0 +1,8 @@
+pywebview
+requests
+# On Linux pywebview draws with WebKitGTK, which besides this extra needs the
+# system packages (python3-gi, gir1.2-webkit2-4.1). See the README.
+pywebview[gtk]; sys_platform != "win32"
+# The desktop keyring: where the password and the ticket go off Windows. On
+# Windows DPAPI plays that part, and it needs no package.
+keyring; sys_platform != "win32"

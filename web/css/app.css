@@ -1,0 +1,1685 @@
+@import url("../fonts/quicksand.css");
+@import url("../fonts/comfortaa.css");
+@import url("../fonts/quantico.css");
+
+/* Trove Accounts Hub - a flat, sober, technical dark theme.
+ *
+ * Design rules:
+ *
+ *   1. The accent tints the background of the WHOLE window, at a low
+ *      percentage: what is wanted is a shared colour temperature, not a colour.
+ *      On top, two very diffuse glows give depth without creating blotches.
+ *   2. Away from the background, the accent appears only where it means
+ *      something: the primary action, an active state, a focused field. Never
+ *      as decoration.
+ *   3. Separation by 1px lines, not by shadows or glass.
+ *   4. Small radii. Labels in small caps with tracking.
+ *
+ * The accent colour stays configurable (--accent); being the only live colour
+ * in the interface, changing it re-tints the whole thing without muddying
+ * anything.
+ */
+
+:root {
+    --accent: #22c55e;
+
+    /* The accent tints EVERY surface, not just a glow at the top: the whole
+       window shares one colour temperature. The percentages are low on
+       purpose - a tone is wanted, not a colour. */
+    /* --tint (0..1) scales how much accent goes into each surface. The base
+       values are nearly black, so at tint 0 the interface is neutral grey. */
+    --tint: .45;
+
+    --bg: color-mix(in srgb, var(--accent) calc(var(--tint) * 9%), #040507);
+    --surface: color-mix(in srgb, var(--accent) calc(var(--tint) * 11%), #08090c);
+    --surface-a: color-mix(in srgb, var(--accent) calc(var(--tint) * 11%), rgba(9, 10, 13, .76));
+    --surface-hi: color-mix(in srgb, var(--accent) calc(var(--tint) * 16%), #0d0e12);
+    --field: color-mix(in srgb, var(--accent) calc(var(--tint) * 7%), #030406);
+
+    --line: color-mix(in srgb, var(--accent) calc(var(--tint) * 20%), #16181c);
+    --line-hi: color-mix(in srgb, var(--accent) calc(var(--tint) * 32%), #1f2227);
+
+    --text: #e6e8e7;
+    --text-dim: #8a918d;
+    --text-faint: #5d635f;
+
+    --ok: #22c55e;
+    --warn: #eab308;
+    --danger: #ef4444;
+    /* Something to know about, with nothing wrong: an account verified but not
+       playing, a mod with a newer version published. Deliberately apart from
+       RUNNING's green - two different states, and one colour would not tell
+       them apart at a glance - and apart from the accent, which the user picks:
+       a state cannot depend on today happening to be purple. */
+    --info: #38bdf8;
+
+    --r: 5px;
+    --r-md: 7px;
+
+    /* One family for the whole interface; the JS changes this variable.
+       The monospaced one is reserved for the log, where alignment matters. */
+    --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+    /* Text over the accent fill: the JS works it out from the luminance,
+       because white does not read on light accents. */
+    --on-accent: #ffffff;
+    /* The accent when written with rather than filled with: the JS works it
+       out (readableAccent), lightening it if the chosen colour would not
+       read. */
+    --accent-text: var(--accent);
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    overflow: hidden;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+}
+
+body { display: flex; flex-direction: column; position: relative; }
+
+/* Depth glows, top and bottom. They sit over a background that is ALREADY
+   tinted, so they only modulate the intensity: without the bottom one there was
+   a dead band across the lower half of the window. */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(135% 88% at 50% -20%,
+            color-mix(in srgb, var(--accent) calc(var(--tint) * 20%), transparent), transparent 78%),
+        radial-gradient(120% 60% at 50% 120%,
+            color-mix(in srgb, var(--accent) calc(var(--tint) * 12%), transparent), transparent 72%);
+}
+
+/* Particle layer: the JS generates the pattern once (see makeStarfield) and
+   it can be switched off from Settings. */
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: .5;
+    background-image: var(--stars, none);
+    background-repeat: repeat;
+}
+body.no-stars::after { display: none; }
+
+/* --- background image ---------------------------------------------------- */
+
+/* Under everything, including the accent glow and the particles: it is the
+   floor of the window, not another layer of ambience.
+
+   The dim is a sheet painted over it by ::after and NOT blurred with it. Both
+   things in one element would have meant blurring the darkening too, which
+   only softens the edges of a flat colour and costs the same as blurring the
+   photograph. */
+#wallpaper {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    display: none;
+    overflow: hidden;      /* the image grows past the edges; see below */
+}
+body.has-wallpaper #wallpaper { display: block; }
+
+/* The image, and the only thing the blur touches. A filter applies to the
+   whole element it sits on, children and pseudo-elements included, so the
+   darkening had to be kept out of here: blurring a flat sheet of black only
+   softens its edges and costs exactly as much as blurring the photograph.
+
+   Blur samples pixels from outside what it is given and leaves a pale rim all
+   round; growing the image past every edge by twice the radius pushes that rim
+   out of sight. */
+#wallpaper::before {
+    content: "";
+    position: absolute;
+    inset: calc(-2 * var(--wallpaper-blur, 0px));
+    background-image: var(--wallpaper, none);
+    background-position: center;
+    /* A photograph covers the window. A club's mark does not - it is drawn at
+       its own size, centred; see paintClubMark. */
+    background-size: var(--wallpaper-size, cover);
+    background-repeat: no-repeat;
+    filter: blur(var(--wallpaper-blur, 0px));
+}
+#wallpaper::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, var(--wallpaper-dim, .45));
+}
+/* With a photograph behind it the accent wash is just haze over the image. */
+body.has-wallpaper::before { display: none; }
+
+.wallpaper-row { display: flex; gap: 8px; align-items: center; }
+
+/* The last few pictures used, to go back to one without the file dialog and
+   without having to remember where it lives. */
+.recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.recent-item {
+    position: relative;
+    width: 54px; height: 36px;
+    padding: 0;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    background: var(--field) center / cover no-repeat;
+    cursor: pointer;
+    overflow: hidden;
+    transition: border-color .12s ease, transform .12s ease;
+}
+.recent-item:hover { border-color: var(--text-faint); transform: translateY(-1px); }
+/* The one on screen right now. Marked, because the row is otherwise a set of
+   equals and which one you are looking at is the first thing you want to know. */
+.recent-item.on {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.recent-item:disabled { cursor: default; opacity: .45; }
+/* Dropping one is deliberate: it only appears on hover, in the corner, and it
+   takes the picture out of the row without touching what is in use. */
+.recent-drop {
+    position: absolute;
+    top: 2px; right: 2px;
+    width: 14px; height: 14px;
+    display: flex; align-items: center; justify-content: center;
+    border: none;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, .6);
+    color: #fff;
+    font-size: 11px;
+    line-height: 1;
+    opacity: 0;
+    cursor: pointer;
+}
+.recent-item:hover .recent-drop { opacity: 1; }
+.recent-drop:hover { background: var(--danger); }
+
+body > * { position: relative; z-index: 1; }
+
+.hidden { display: none !important; }
+
+/* Technical label: spaced small caps, the typographic device that sets the
+   tone of the whole without needing more colour. */
+.label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+
+/* --- app header ---------------------------------------------------------- */
+
+.appbar {
+    flex: none;
+    /* A little taller than a usual title bar: the club wordmarks are wide and
+       stop reading below about 30px of height. */
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-a);
+}
+.brand { display: flex; align-items: center; min-width: 0; }
+
+/* Own logo: the PNG/SVG goes in as a MASK, not as an image, so what is seen
+   is the background - the accent - and the logo re-tints with the rest of the
+   interface (the same device the group's launch-all button uses). The aspect
+   ratio comes from the SVG's viewBox, so setting the height is enough. */
+.brand-lockup {
+    display: block;
+    height: 26px;
+    aspect-ratio: 118.89 / 26.2;
+    flex: none;
+    background: var(--accent);
+    -webkit-mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
+    mask: url("../img/trove-accounts-hub.svg") center / contain no-repeat;
+}
+/* A club's logo is its own artwork and goes in full colour: it is scaled by
+   height and keeps its aspect ratio, which across the three is very different
+   (two wide wordmarks, one nearly square portrait). */
+.brand-logo {
+    display: block;
+    height: 30px;
+    width: auto;
+    max-width: 200px;
+    object-fit: contain;
+    flex: none;
+}
+
+/* --- action bar ---------------------------------------------------------- */
+
+.toolbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+}
+.toolbar-left { display: flex; gap: 8px; }
+.toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+.search {
+    width: min(340px, 34vw);
+    margin: 0 auto;
+    position: relative;
+}
+/* In the mods toolbar nothing follows it, so centring left it adrift in the
+   middle of the bar. Pushed to the end instead: everything to its left is a
+   button that does something to the folder, and this is the odd one out. */
+#pane-mods .search { margin: 0 0 0 auto; }
+/* Two classes on purpose: the generic `input` block sits further down the
+   sheet and, at equal specificity, won on order and flattened the space
+   reserved for the magnifier. */
+.search input[type="text"] {
+    width: 100%;
+    padding: 7px 11px 7px 31px;
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+    background: var(--field);
+    color: var(--text);
+    font-size: 12.5px;
+    font-family: inherit;
+    outline: none;
+}
+.search input::placeholder { color: var(--text-faint); }
+.search input[type="text"]:focus { border-color: var(--accent); }
+.search svg {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 13px;
+    height: 13px;
+    color: var(--text-faint);
+    pointer-events: none;
+}
+
+.counts { font-size: 10px; font-weight: 600; letter-spacing: 1.1px;
+          text-transform: uppercase; color: var(--text-faint); white-space: nowrap; }
+.counts b { color: var(--text-dim); font-weight: 600; }
+.counts .live { color: var(--accent); }
+
+/* --- board --------------------------------------------------------------- */
+
+.board { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* The gap is here rather than as a margin on the boxes: it keeps the last one
+   from pushing a stray margin against the bottom of the scroll area. */
+.board-body {
+    flex: 1; min-height: 0;
+    overflow-y: auto; overflow-x: hidden;
+    display: flex; flex-direction: column; gap: 14px;
+}
+
+/* --- group box ------------------------------------------------------------ */
+
+/* Each group is framed in its own colour, header and cards and buttons inside
+   the same box. The colour used to live in a dot small enough to miss; as a
+   frame it says at a glance where one group ends and the next begins.
+
+   Everything below derives from one custom property, set per group in
+   board.js, so a group with no colour falls back to the neutral line. */
+.group { --group: var(--line-hi); }
+/* Ungrouped is not a group and has no colour to wear, so it keeps the line. */
+.group.loose { --group: var(--line); }
+
+/* The same colour lifted towards white, for anything that has to READ against
+   the band rather than just tint it. Group colours are picked to sit behind
+   things, so several of them are dark enough that an icon painted in the raw
+   colour disappeared into its own header. */
+.group { --group-lit: color-mix(in srgb, var(--group) 55%, #e8efeb); }
+
+
+/* --- group header -------------------------------------------------------- */
+
+/* The header wears the group's colour as a frame. The cards below are left
+   unframed on purpose: boxing them too turned the board into a stack of
+   nested rectangles and buried the cards, which are what you actually read. */
+.group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    /* Inset instead of running edge to edge: the frame stops just short of the
+       drag grip on one side and the tools on the other, so it reads as a label
+       for the group rather than a band across the window. The 2px of padding
+       is what leaves that sliver. */
+    margin: 0 13px;
+    padding: 0 2px;
+    cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--group) 42%, transparent);
+    border-radius: var(--r);
+    background: color-mix(in srgb, var(--group) 7%, transparent);
+}
+.group-caret {
+    /* Set in from the handle: the two used to sit one gap apart and read as a
+       single smudge at the left edge. */
+    margin-left: 4px;
+    width: 10px; height: 10px; flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    transition: transform .14s ease;
+}
+.group-caret svg { display: block; width: 100%; height: 100%; }
+.group-caret.open { transform: rotate(90deg); }
+.group-name {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+}
+.group-count { font-family: var(--font); font-size: 10.5px; color: var(--text-faint); }
+.group-tools { margin-left: auto; display: flex; gap: 4px; opacity: 0; transition: opacity .12s; }
+.group-head:hover .group-tools { opacity: 1; }
+
+.more-row {
+    padding: 9px 16px;
+    text-align: center;
+    font-size: 10px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase;
+    color: var(--text-faint);
+    cursor: pointer;
+}
+.more-row:hover { color: var(--text-dim); background: var(--surface); }
+
+/* --- server: clickable box ----------------------------------------------- */
+
+/* Same treatment as the status badge: box, small caps and border, so the
+   card's two data points rhyme. */
+.server-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    padding: 5.5px 9px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    background: var(--field);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    /* line-height 1 fits the line box to the text: with `normal` it reserves
+       room for descenders that uppercase does not have, and the whole thing
+       looks tall. */
+    line-height: 1;
+    letter-spacing: 1px;
+    /* Tracking adds space AFTER the last letter; this padding compensates
+       for it so the text is optically centred. */
+    text-indent: 1px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color .12s ease, color .12s ease;
+}
+.server-cell:hover { border-color: var(--text-faint); color: var(--text); }
+
+/* --- status: bordered label ---------------------------------------------- */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 108px;
+    padding: 5.5px 9px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    background: var(--field);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    white-space: nowrap;
+    cursor: default;
+}
+.badge .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+/* Optical centring of small-caps text, solved by the engine.
+   `text-box: trim-both cap alphabetic` trims the space the font reserves above
+   the capitals and below the baseline, so the text's box hugs the glyphs and
+   align-items:center genuinely centres them. It works with any family, which is
+   exactly what failed when compensating with a fixed figure: every font puts
+   the baseline at a different height. Without support, the text merely looks as
+   it did before: nothing breaks. */
+.badge > span:last-child,
+.server-cell > span {
+    text-box: trim-both cap alphabetic;
+}
+
+.badge.running { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.badge.stopping, .badge.launching, .badge.checking {
+    color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.badge.stopping .dot,
+.badge.launching .dot, .badge.checking .dot { animation: blink 1s steps(2, start) infinite; }
+/* Giving up is not the same as getting on with it. */
+.badge.stopping { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.badge.failed { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.badge.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.badge.unknown { color: var(--text-faint); }
+.badge.ready { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+
+@keyframes blink { 50% { opacity: .25; } }
+
+/* --- actions: icon buttons ----------------------------------------------- */
+
+.actions { display: flex; gap: 5px; justify-content: center; }
+
+.act {
+    width: 30px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line-hi);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.act:hover:not(:disabled) { background: var(--surface-hi); border-color: var(--text-faint); color: var(--text); }
+.act:disabled { opacity: .3; cursor: not-allowed; }
+.act svg { width: 14px; height: 14px; display: block; }
+
+/* Icons that come from a PNG instead of an inline SVG. The file is white
+   with alpha and is used as a MASK: what is seen is the background -
+   currentColor - so it follows the theme just like the drawn paths. */
+.mask-icon {
+    display: block;
+    width: 15px;
+    height: 15px;
+    background: currentColor;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+}
+.mask-icon.login {
+    -webkit-mask-image: url("../img/log-in.png");
+    mask-image: url("../img/log-in.png");
+}
+.mask-icon.terminal {
+    -webkit-mask-image: url("../img/terminal.png");
+    mask-image: url("../img/terminal.png");
+}
+
+.act.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.act.accent:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+
+.act.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.act.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+
+.btn {
+    padding: 6px 12px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.btn:hover:not(:disabled) { background: var(--surface-hi); border-color: var(--text-faint); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.small { padding: 4px 9px; font-size: 11.5px; }
+
+/* The primary action is the only thing with a colour fill. */
+.btn.primary {
+    background: color-mix(in srgb, var(--accent) 88%, #000);
+    border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+    color: var(--on-accent);
+    font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+}
+.btn.primary:disabled { opacity: .3; }
+
+.btn.accent {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.btn.accent:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+.btn.danger {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+    background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+
+.btn.ghost { background: transparent; border-color: var(--line-hi); }
+.btn svg { width: 12px; height: 12px; vertical-align: -1px; }
+
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.icon-btn {
+    width: 24px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    background: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 0;
+}
+.icon-btn:hover { background: var(--surface-hi); border-color: var(--line-hi); color: var(--text); }
+.icon-btn svg { width: 13px; height: 13px; }
+
+/* --- drag and drop ------------------------------------------------------- */
+
+/* The handle is what you have to hit to drag a group, so it is sized to be
+   hit. The svg needs its own rule: without one it renders at whatever it likes
+   inside the span and the dots came out at 10px, smaller than the caret. */
+.grip {
+    width: 15px; height: 15px; flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    opacity: 0;
+    cursor: grab;
+}
+.grip svg { display: block; width: 100%; height: 100%; }
+.group-head:hover .grip { opacity: .45; }
+.group-head.dragging { opacity: .35; }
+.drop-into { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* Where a dragged group will land: a line above or below the group under the
+   cursor. These classes existed but had no styling at all, so dragging a group
+   gave no clue where it was going. box-shadow rather than a border, so nothing
+   shifts by two pixels while you drag. */
+.group.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.group.drop-after { box-shadow: 0 2px 0 0 var(--accent); }
+
+.dropzone {
+    margin: 10px 16px;
+    padding: 12px;
+    border: 1px dashed var(--line-hi);
+    border-radius: var(--r);
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+/* --- empty state --------------------------------------------------------- */
+
+.empty {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px;
+    color: var(--text-dim);
+}
+
+/* --- status bar ---------------------------------------------------------- */
+
+.statusbar {
+    flex: none;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 14px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-a);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+.statusbar .left, .statusbar .right { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* The application is named here, not at the top: with a club theme the top
+   bar shows the club's logo and nowhere else would say what this is called. */
+.statusbar .app-name { font-family: var(--font); color: var(--text-faint);
+                       text-transform: none; letter-spacing: .3px; flex: none; }
+.statusbar .app-name b { font-weight: 600; color: var(--text-dim); }
+.statusbar .msg { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11.5px;
+                  color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.statusbar .msg.error { color: var(--danger); }
+.statusbar .msg.ok { color: var(--accent); }
+/* The installation in use, top right: dim label and PATH in the accent
+   colour, like the folders in Settings. They are two different things - which
+   and where - and in a single grey they read as a footer; the path is the datum
+   one comes to look at, and it can also be clicked to change it. */
+.install-chip {
+    display: inline-flex; align-items: baseline; gap: 7px; min-width: 0;
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-family: var(--font); font-size: 10.5px;
+    letter-spacing: 0; text-transform: none;
+    max-width: 340px;
+}
+.chip-label {
+    flex: none;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
+    color: var(--text-faint);
+}
+.chip-path {
+    min-width: 0;
+    color: var(--accent-text);
+    font-weight: 600;
+    /* Ellipsis on the left: in a long path it is the end that matters. */
+    direction: rtl;
+    text-align: right;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* With no installation there is no path to show, and that needs resolving:
+   it is painted as what it is, something outstanding. */
+.chip-empty { color: var(--warn); font-weight: 600; }
+.install-chip:hover .chip-label { color: var(--text-dim); }
+.install-chip:hover .chip-path,
+.install-chip:hover .chip-empty { text-decoration: underline; }
+
+.bar { width: 120px; height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.bar-fill {
+    height: 100%; width: 100%; border-radius: 999px; background: var(--accent);
+    transform: scaleX(0); transform-origin: left; transition: transform .18s linear;
+}
+.bar-fill.indeterminate { animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide {
+    0% { transform: translateX(-100%) scaleX(.35); }
+    100% { transform: translateX(300%) scaleX(.35); }
+}
+
+/* --- the shell: a rail on the left, one pane at a time on the right ------- */
+
+.shell { flex: 1; min-height: 0; display: flex; }
+
+/* Two widths: a rail of icons, and open with the names beside them.
+   The rail is what holds the space in the layout; the panel inside it is what
+   grows, floating over the pane. Widening the rail itself would shove the whole
+   board sideways every time the pointer crossed it. */
+.sidebar {
+    flex: none;
+    width: 54px;
+    position: relative;
+    transition: width .16s ease;
+}
+body.rail-open .sidebar { width: 168px; }
+
+.sidebar-inner {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 54px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 8px;
+    border-right: 1px solid var(--line);
+    background: var(--surface-a);
+    overflow: hidden;
+    transition: width .16s ease;
+}
+body.rail-open .sidebar-inner { width: 168px; }
+/* It does NOT open on hover. The button at the bottom is what opens it, and a
+   rail that widened whenever the pointer crossed it opened by accident far more
+   often than on purpose. */
+
+/* The names fade rather than appear: sliding them in from under the icons read
+   as the icons moving. */
+.side-label {
+    opacity: 0;
+    white-space: nowrap;
+    transition: opacity .12s ease;
+}
+body.rail-open .side-label { opacity: 1; }
+
+/* Pinned to the bottom, and pointing the way it will go. */
+.side-pin { margin-top: auto; color: var(--text-faint); }
+.side-pin .side-icon { transition: transform .16s ease; }
+body.rail-open .side-pin .side-icon { transform: rotate(180deg); }
+.side-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    background: none;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.side-item:hover { background: var(--surface-hi); color: var(--text); }
+/* The one you are on is filled, not just coloured: on a busy wallpaper a tint
+   of text colour alone stopped being legible as "here". */
+.side-item.active {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+    color: var(--accent-text);
+    font-weight: 600;
+}
+.side-icon { width: 15px; height: 15px; flex: none; display: inline-flex; }
+.side-icon svg { width: 100%; height: 100%; display: block; }
+
+.panes { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pane.hidden { display: none !important; }
+
+/* --- passing notices ------------------------------------------------------ */
+
+/* For something that just happened and is worth reading once. The status bar
+   is for what is going on now and the dialog is for what needs an answer; this
+   is the third case, and it takes itself away.
+
+   Bottom right, out of the way of the rail and of the board's own buttons. */
+.toasts {
+    position: fixed;
+    right: 16px; bottom: 42px;
+    z-index: 45;
+    display: flex;
+    flex-direction: column-reverse;   /* newest nearest the corner */
+    gap: 8px;
+    pointer-events: none;
+}
+.toast {
+    pointer-events: auto;
+    max-width: 360px;
+    padding: 10px 12px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line-hi);
+    background: var(--surface-hi);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text);
+    cursor: pointer;
+    animation: toast-in .18s ease;
+}
+.toast.warn { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.toast.warn b { color: var(--warn); }
+/* The same split as the cards: amber for a fault, blue for news. */
+.toast.info { border-color: color-mix(in srgb, var(--info) 55%, transparent); }
+.toast.info b { color: var(--info); }
+/* A toast that does something when you press it says so, and lifts under the
+   pointer: the rest of them only go away. */
+.toast.clickable { cursor: pointer; }
+.toast.clickable:hover { border-color: var(--text-faint); transform: translateY(-1px); }
+.toast .hint {
+    display: block;
+    margin-top: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+.toast.going { opacity: 0; transform: translateY(6px); transition: .25s ease; }
+@keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* --- mods ---------------------------------------------------------------- */
+
+#mod-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 10px;
+    padding: 12px 16px 16px;
+    align-content: start;
+}
+/* Compact drops the pictures, and with them the reason for wide cards: the
+   rows get narrower and taller so more of them fit on a screen. */
+#mod-list.compact { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+.mod {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+}
+.mod:hover { border-color: var(--line-hi); }
+/* A disabled mod is still listed, just clearly not in play. */
+.mod.off { opacity: .55; }
+.mod.working { opacity: .4; pointer-events: none; }
+
+.mod-shot {
+    width: 74px; height: 46px; flex: none;
+    border-radius: var(--r);
+    overflow: hidden;
+    background: var(--field);
+    display: flex; align-items: center; justify-content: center;
+}
+.mod-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Nothing to show, and it says so: a crossed-out picture, dim enough not to
+   compete with the mods that do have one. */
+.mod-shot.empty {
+    background: color-mix(in srgb, var(--line) 40%, transparent);
+    color: var(--text-faint);
+}
+.mod-shot.empty svg { width: 20px; height: 20px; opacity: .8; }
+
+.mod-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mod-name {
+    font-size: 12.5px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mod-meta {
+    font-size: 10.5px; color: var(--text-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* The switch reads as on or off from across the room, which a checkbox in this
+   palette did not. */
+.switch {
+    flex: none;
+    width: 38px; height: 21px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--line-hi);
+    background: var(--field);
+    cursor: pointer;
+    position: relative;
+    transition: background .14s ease, border-color .14s ease;
+}
+.switch .knob {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    transition: transform .14s ease, background .14s ease;
+}
+.switch[aria-checked="true"] {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.switch[aria-checked="true"] .knob {
+    transform: translateX(17px);
+    background: var(--accent);
+}
+
+/* A mod that fights with another over a file. The card is not dimmed - it is
+   loaded and working, it just may not be the one that wins. */
+/* Amber, the colour of something wrong without anything being broken: a mod
+   you have switched on is silently doing nothing. An update is not a fault at
+   all, so it went to the informational blue rather than share this. */
+.mod-clash {
+    display: inline-flex;
+    width: 13px; height: 13px;
+    flex: none;
+    margin-left: 6px;
+    color: var(--warn);
+    vertical-align: -2px;
+}
+.mod-clash svg { width: 100%; height: 100%; display: block; }
+
+/* A mod with a newer version waiting. Blue, not the accent the user picked:
+   this has to mean the same thing in every theme. Not amber either - that is
+   the conflict, which is a fault; an update is only an offer. */
+.mod.has-update { border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+
+.mod-update-row {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    margin-top: 4px;
+}
+.mod-version {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    color: var(--info);
+    white-space: nowrap;
+}
+
+.mod-update, .mod-page {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 20px;
+    padding: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease;
+}
+.mod-update {
+    color: var(--info);
+    border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+    background: color-mix(in srgb, var(--info) 12%, transparent);
+}
+.mod-update:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--info) 24%, transparent);
+}
+.mod-update svg { width: 13px; height: 13px; display: block; }
+/* Mid-download: the arrow keeps nudging downwards so it is clear the click
+   landed on something that takes a moment. */
+.mod-update:disabled { cursor: wait; }
+.mod-update.working svg { animation: pulling .9s ease-in-out infinite; }
+@keyframes pulling {
+    0%, 100% { transform: translateY(-1px); opacity: .6; }
+    50% { transform: translateY(2px); opacity: 1; }
+}
+
+.mod-page {
+    color: var(--text-faint);
+    border: 1px solid var(--line-hi);
+    background: none;
+}
+.mod-page:hover { color: var(--text); border-color: var(--text-faint); }
+/* The globe goes in as a MASK, so it takes the button's colour instead of
+   staying the black it was drawn in. Same device as the launch-all logo. */
+.mod-page .globe {
+    display: block;
+    width: 13px; height: 13px;
+    background: currentColor;
+    -webkit-mask: url("../img/globe.png") center / contain no-repeat;
+    mask: url("../img/globe.png") center / contain no-repeat;
+}
+
+/* The toolbar button, which only appears when there is something to update. */
+.btn.info {
+    color: var(--info);
+    border-color: color-mix(in srgb, var(--info) 45%, transparent);
+    background: color-mix(in srgb, var(--info) 10%, transparent);
+}
+.btn.info:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--info) 20%, transparent);
+}
+.mod.clashes { border-color: color-mix(in srgb, var(--warn) 42%, transparent); }
+.mod-body .mod-name { display: inline-block; max-width: calc(100% - 22px); }
+.counts .bad { color: var(--warn); }
+/* Nothing to report: present, holding its place, not asking for attention. */
+.counts .quiet { color: var(--text-faint); }
+
+/* The row under the toolbar: the tags, what the list adds up to, and the one
+   switch. All of it about LOOKING at the folder, where the row above is about
+   changing it - and a top bar carrying both had run out of room. */
+.subbar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 16px 10px;
+    border-bottom: 1px solid var(--line);
+}
+/* Stacked, one fact per line, against the three rows of buttons on their
+   left. Left-aligned: the three read as a list, and ranged right they were
+   three separate labels that happened to end together. */
+.subbar .counts {
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    line-height: 1.35;
+}
+
+/* Buttons rather than a dropdown: what is on and what else there is are both
+   readable without opening anything, and a category you cannot see is one you
+   will not remember to look for.
+
+   A grid and not a row of pills, because the list is fixed and always shown
+   whole: laid out by their own widths, sixteen names of wildly different
+   lengths came out as ragged bands, and the eye reads a ragged block as a
+   pile rather than a set of equals. Every cell is the same width and the
+   widest name decides it.
+
+   Filled DOWN the columns, with the three rows written into the rule rather
+   than falling out of how many there happen to be. Three is the shape the
+   block has to keep: the counts stand beside it on their own three lines, and
+   a block that grew a fourth row the day something new appeared - the Updates
+   button, which comes and goes - would drag them off centre. */
+.chips {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: grid;
+    grid-template-rows: repeat(3, auto);
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(94px, 1fr);
+    gap: 4px;
+}
+.chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 4px 8px 3px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    background: none;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .2px;
+    /* Explicit, and the whole reason the text was sitting high in the button:
+       at `normal` this font asks for a line box about half as tall again as the
+       text, which is more than the room left between the paddings - so the box
+       overflowed and what should have been centred was pushed against the top.
+       Worth doing on every small button, not just these. */
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.chip:hover:not(:disabled) { color: var(--text); border-color: var(--text-faint); }
+/* One line, always. Without this "Boats and Sails" folded in two and, grid
+   rows being as tall as their tallest cell, every button in the block grew to
+   match it. */
+.chip .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip .n { color: var(--text-faint); font-weight: 500; }
+/* A category this folder has none of. Still there - it is part of the shape of
+   the list - but plainly nothing to press. Called `zero` and not `empty`:
+   `.empty` is already the blank-panel state, and it is a flex column, so these
+   buttons put their number under their name and then dragged every other
+   button in the grid up to their height. */
+.chip.zero { opacity: .4; cursor: default; }
+.chip.on {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    color: var(--accent-text);
+}
+.chip.on .n { color: inherit; opacity: .75; }
+/* The mods with something newer waiting: the same blue they wear on their own
+   cards, so the chip and what it selects are plainly the same thing. */
+.chip.news { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.chip.news.on {
+    background: color-mix(in srgb, var(--info) 18%, transparent);
+    border-color: color-mix(in srgb, var(--info) 55%, transparent);
+    color: var(--info);
+}
+
+.compact-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+/* --- side panel ---------------------------------------------------------- */
+
+.backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 40; }
+#modal-backdrop { display: flex; align-items: center; justify-content: center; }
+
+/* Settings used to slide in over the board; now it is simply one of the panes,
+   so it loses its own position, width and edge and takes the pane's. */
+.drawer {
+    width: auto;
+    background: transparent;
+    display: flex; flex-direction: column;
+    /* The bottom gap is a margin on the last child, not padding here: a
+       scrolling flex container does not let you reach its end padding, which
+       is what left the log box flush against the window edge. */
+    padding: 18px 20px 0;
+    gap: 10px;
+    overflow-y: auto;
+}
+.drawer > :last-child { margin-bottom: 26px; }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; }
+.drawer-head h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: .4px; }
+
+/* The <details> stays a normal block. With display:flex, the internal slot
+   Chromium puts the content in counts as a flex item even when the children are
+   display:none, and the gap separated it from the summary: every folded section
+   dragged 26 phantom pixels. The air now lives in .section-body. */
+.drawer-section { display: block; }
+/* The log section is sized by its content, not stretched to fill.
+   With flex:1 it grew into the panel's bottom padding, so at the end of the
+   scroll the box sat flush against the window edge and the last lines were
+   unreachable however far you scrolled. */
+.drawer-section.grow[open] { display: flex; flex-direction: column; }
+
+/* Here yes: spacing between the controls inside one section. */
+.section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-top: 16px;
+}
+.drawer-section.grow .section-body { flex: 1; min-height: 0; }
+.drawer-section h3 {
+    margin: 0;
+    font-size: 10px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--text-faint);
+}
+
+.maint-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.maint-label { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; font-weight: 600; }
+.maint-label span { font-family: var(--font); font-size: 10.5px; font-weight: 400; color: var(--text-faint); }
+
+.note {
+    margin: 0;
+    padding-left: 10px;
+    border-left: 2px solid var(--line-hi);
+    color: var(--text-faint);
+    font-size: 11.5px;
+    line-height: 1.6;
+}
+/* A note warning about something that does not work: same block, lit border.
+   The text stays dim - the warning comes from the border, not a red paragraph. */
+.note.bad { border-left-color: var(--danger); }
+
+/* The panel's text fields take the width of their section. */
+.drawer .field input[type="text"] { width: 100%; }
+
+.check { display: flex; align-items: center; gap: 9px; font-size: 12.5px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+/* The log fills its pane: it is the whole of what that page has to show. No
+   ceiling on its height any more - it used to need one because it sat in a
+   settings section and, left to grow, it dragged every other section off the
+   screen. Nothing is above or below it now. */
+#pane-log .log-wrap { flex: 1; min-height: 0; padding: 0 16px 14px; }
+
+.log-wrap { display: flex; flex-direction: column; min-height: 0; }
+
+.log {
+    margin: 0;
+    flex: 1;
+    /* Shrinks with the window. A fixed ceiling looked right at full size
+       and ran off the bottom edge once the window got short, leaving no
+       gap at all between the box and the frame. */
+    min-height: 90px;
+    overflow-y: auto;
+    padding: 10px 11px;
+    border-radius: var(--r);
+    background: var(--field);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+}
+
+/* --- colour picker ------------------------------------------------------
+   One control, three places: the accent in Settings, an account's name and a
+   group's colour. A fixed palette on top, the colours you have saved below,
+   and the add button at the end of that second row. The saved list is shared,
+   so a colour kept for one is there for the others.
+   --- ---------------------------------------------------- */
+
+.swatch-rows { display: flex; flex-direction: column; gap: 7px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.swatch {
+    width: 22px; height: 22px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    cursor: pointer;
+    padding: 0;
+}
+.swatch.active { border-color: var(--text); }
+/* With a club theme the club fixes the accent: the controls are visible but
+   not touchable. The tint stays free - it is intensity, not colour. */
+.swatches.locked { opacity: .45; pointer-events: none; }
+
+/* Second row: the colours the user has saved. It is slightly inset from the
+   fixed palette so the two read as different things. */
+.swatches.customs { margin-top: -2px; }
+
+/* The x for forgetting a colour appears on hover, inside the swatch itself.
+   The accent in use does not carry one: while it is on it stays saved. */
+.swatch { position: relative; }
+.swatch-x {
+    position: absolute;
+    top: -5px; right: -5px;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1;
+    background: var(--surface-hi);
+    border: 1px solid var(--line-hi);
+    color: var(--text-dim);
+}
+.swatch:hover .swatch-x { display: flex; }
+.swatch.active .swatch-x { display: none; }
+.swatch-x:hover { color: var(--text); border-color: var(--text-faint); }
+
+/* Add colour: a dotted slot with a "+" and, on top of it, the invisible
+   native picker - which is what opens the system dialog. */
+.swatch-add {
+    position: relative;
+    width: 22px; height: 22px;
+    border-radius: var(--r);
+    border: 1px dashed var(--line-hi);
+    background: var(--field);
+    color: var(--text-faint);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+.swatch-add:hover { border-color: var(--text-faint); color: var(--text); }
+.swatch-add input {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+/* --- modal --------------------------------------------------------------- */
+
+.modal {
+    width: min(420px, 90vw);
+    padding: 18px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line-hi);
+    background: var(--surface);
+    display: flex; flex-direction: column; gap: 14px;
+    z-index: 42;
+}
+.modal h3 { margin: 0; font-size: 14px; font-weight: 600; }
+
+/* The message dialog stacks over the generic modal, which stays open behind
+   it: dismissing the message must give back the form, not an empty board. */
+#alert-backdrop { display: flex; align-items: center; justify-content: center;
+                  z-index: 50; }
+.modal.alert { width: min(360px, 90vw); z-index: 51;
+               background: var(--surface-hi);
+               box-shadow: 0 14px 40px rgba(0, 0, 0, .55); }
+.modal.alert p { margin: 0; font-size: 12px; line-height: 1.55;
+                 color: var(--text-dim); overflow-wrap: anywhere; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.field { display: flex; flex-direction: column; gap: 10px; }
+.field label { font-size: 10px; font-weight: 600; letter-spacing: 1.1px;
+               text-transform: uppercase; color: var(--text-faint); }
+.field p { margin: 0; font-size: 12.5px; color: var(--text-dim); line-height: 1.55; }
+
+input[type="text"], input[type="email"], input[type="password"], select {
+    padding: 8px 10px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    background: var(--field);
+    color: var(--text);
+    font-size: 12.5px;
+    font-family: inherit;
+    outline: none;
+    user-select: text;
+}
+input:focus, select:focus { border-color: var(--accent); }
+
+/* The dropdowns in the settings panel. Two things the native control will not
+   do: its arrow is pinned to the right edge and no amount of padding-right
+   shifts it, and the control stretches to the full width of its field, which
+   for four short words is a lot of empty bar. So the arrow is drawn here -
+   the same chevron the group headers use - and the width is cut to fit what
+   actually goes in it. The dialogs' selects are left alone: those sit beside
+   longer values and want the room. */
+.drawer .field select {
+    appearance: none;
+    width: 208px;
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238a918d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
+    background-size: 11px;
+    cursor: pointer;
+}
+input[type="range"] { accent-color: var(--accent); cursor: pointer; }
+
+/* --- tooltip ------------------------------------------------------------- */
+
+.tooltip {
+    position: fixed;
+    z-index: 60;
+    max-width: 330px;
+    padding: 8px 10px;
+    border-radius: var(--r);
+    border: 1px solid var(--line-hi);
+    background: #050605;
+    color: var(--text);
+    font-size: 11.5px;
+    line-height: 1.5;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .55);
+    pointer-events: none;
+}
+.tooltip.error { border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+
+/* --- popover ------------------------------------------------------------- */
+
+.popover {
+    position: fixed;
+    z-index: 45;
+    min-width: 270px;
+    max-width: 460px;
+    padding: 5px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line-hi);
+    background: var(--surface);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .55);
+    display: flex; flex-direction: column; gap: 1px;
+}
+.popover-item {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 7px 10px;
+    border: none;
+    border-radius: var(--r);
+    background: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+.popover-item:hover { background: var(--surface-hi); }
+.popover-item.active { color: var(--accent); }
+.popover-item small { font-family: var(--font); font-size: 10.5px; color: var(--text-faint);
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover-sep { height: 1px; background: var(--line); margin: 4px 0; }
+
+/* --- scrollbars ---------------------------------------------------------- */
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #232825; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #2f3531; }
+
+/* --- settings panel sections --------------------------------------------- */
+
+details.drawer-section > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--line);
+    user-select: none;
+}
+details.drawer-section > summary::-webkit-details-marker { display: none; }
+/* Triangle drawn with borders: it rotates without dragging the baseline
+   along, which is what knocked the groups' caret out of place. */
+details.drawer-section > summary::before {
+    content: "";
+    width: 0; height: 0;
+    flex: none;
+    border-left: 4px solid var(--text-faint);
+    border-top: 3.5px solid transparent;
+    border-bottom: 3.5px solid transparent;
+    transition: transform .14s ease;
+}
+details.drawer-section[open] > summary::before { transform: rotate(90deg); }
+details.drawer-section > summary:hover::before { border-left-color: var(--text-dim); }
+details.drawer-section > summary h3 { margin: 0; }
+details.drawer-section[open] { padding-bottom: 10px; }
+
+
+/* --- install path in the brand bar --------------------------------------- */
+
+.appbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+/* --- folders in Settings ------------------------------------------------- */
+
+.folder-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--field);
+}
+.folder-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.folder-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
+    color: var(--text-faint);
+}
+.folder-path {
+    font-family: var(--font);
+    font-size: 11px;
+    color: var(--text-dim);
+    /* Ellipsis on the left: in a long path it is the end that matters. */
+    direction: rtl;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#folder-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* The group's "launch all" button is set apart from the other tools. */
+.icon-btn.accent { color: var(--accent); }
+.icon-btn.accent:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    color: var(--accent);
+}
+
+/* --- font switcher ------------------------------------------------------- */
+
+.segmented {
+    display: inline-flex;
+    border: 1px solid var(--line-hi);
+    border-radius: var(--r);
+    overflow: hidden;
+    width: fit-content;
+}
+.segmented button {
+    padding: 6px 16px;
+    border: none;
+    background: var(--field);
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.segmented button + button { border-left: 1px solid var(--line-hi); }
+.segmented button:hover { background: var(--surface-hi); color: var(--text); }
+.segmented button.active {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* --- card grid ----------------------------------------------------------- */
+
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+    gap: 10px;
+    padding: 10px 16px 4px;
+}
+
+.card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: background .12s ease, border-color .12s ease;
+}
+.card:hover { background: var(--surface-hi); border-color: var(--line-hi); }
+.card.group-head.dragging { opacity: .35; }
+
+.card-head { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.card-name {
+    font-weight: 600;
+    font-size: 13.5px;
+    line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-name.struck { text-decoration: line-through; color: var(--text-dim); }
+.card-mail {
+    font-family: var(--font);
+    font-size: 10.5px;
+    color: var(--text-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.card-meta .badge { min-width: 0; }
+
+.card .actions {
+    justify-content: flex-start;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+    margin-top: auto;
+}
+.act.grow { flex: 1; }
+
+/* --- launch the whole group ---------------------------------------------- */
+
+/* It lives inside .group-tools, next to edit and delete, so it appears on
+   hovering the header like the rest. It is set apart by size and colour, not by
+   position. */
+/* The group header's three buttons share a box so they read as one toolbar,
+   and all three wear the group's own colour: they belong to that group and to
+   no other, and in grey they were three anonymous icons that could have come
+   from anywhere on the page. The launch one still leads, by being a shade
+   stronger rather than a different colour. */
+.launch-all,
+.group-tools .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    min-width: 30px;
+    padding: 0 6px;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+    color: var(--group-lit);
+    border: 1px solid color-mix(in srgb, var(--group) 38%, transparent);
+    background: color-mix(in srgb, var(--group) 10%, transparent);
+}
+.group-tools .icon-btn:hover {
+    background: color-mix(in srgb, var(--group) 24%, transparent);
+    border-color: var(--group-lit);
+    color: color-mix(in srgb, var(--group) 25%, #ffffff);
+}
+.launch-all {
+    border-color: color-mix(in srgb, var(--group) 55%, transparent);
+    background: color-mix(in srgb, var(--group) 18%, transparent);
+}
+.launch-all:hover {
+    background: color-mix(in srgb, var(--group) 30%, transparent);
+    border-color: var(--group-lit);
+    color: color-mix(in srgb, var(--group) 25%, #ffffff);
+}
+.launch-all svg { width: 17px; height: 17px; display: block; }
+
+/* The logo goes in as a MASK, not as an <img>: the PNG is opaque white, so
+   painted as-is it would ignore the theme. Used as a mask, what is seen is the
+   background - currentColor - and the icon follows the accent like the rest of
+   the interface. */
+.launch-all .launch-logo {
+    display: block;
+    width: 19px;
+    height: 19px;
+    background: currentColor;
+    -webkit-mask: url("../img/launch-all.png") center / contain no-repeat;
+    mask: url("../img/launch-all.png") center / contain no-repeat;
+}
+
+/* The Protons found, in Settings -> Wine: pick one and that is the end of
+   typing .../files/bin/wine paths by hand. */
+.runner-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+    padding: 7px 9px;
+    margin-top: 6px;
+    border: 1px solid var(--line-hi);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+}
+.runner-row:hover { background: var(--surface-hi); border-color: var(--text-faint); }
+.runner-row small { color: var(--text-faint); font-size: 11px; word-break: break-all; }
+.runner-row.active {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* --- insertion gap while dragging ---------------------------------------- */
+
+/* The dragged card itself acts as the gap and is moved into the target: you
+   see where it will land without adding or removing elements.
+   Inserting a separate placeholder flickered: each insertion relaid the grid,
+   the cursor ended up over a different card and the calculation looped.
+   Keeping the number of cells constant, that does not happen. */
+.card.dragging {
+    opacity: 1;
+    border: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* The content is hidden but still takes its space: the card keeps the exact
+   size it will have once dropped. */
+.card.dragging > * { visibility: hidden; }
+
+/* --- per-group drop zones ------------------------------------------------ */
+
+/* They take no space until a drag begins; then every group shows where a
+   card can be dropped, including the empty ones, which previously offered no
+   point of reference at all. */
+.drop-slot { display: none; }
+
+body.dragging-account .drop-slot {
+    display: block;
+    min-height: 118px;
+    border: 1px dashed color-mix(in srgb, var(--accent) 28%, transparent);
+    border-radius: 8px;
+    transition: border-color .12s ease, background .12s ease;
+}
+body.dragging-account .drop-slot.over {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* If the dragged card is already inside this group, it acts as the gap
+   itself: also showing the group's zone left two empty boxes in a row, as if
+   there were two different destinations. */
+.card-grid:has(.card.dragging) .drop-slot { display: none; }
+
+/* With a drag in progress, a folded group still accepts the account through
+   its header, so it is highlighted the same way. */
+body.dragging-account .group-head { transition: background .12s ease; }
