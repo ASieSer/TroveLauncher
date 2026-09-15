@@ -1,5 +1,18 @@
 # Trove Accounts Hub
 
+> [!CAUTION]
+> **Using this is not recommended right now, until further notice.**
+>
+> There is no official approval for this tool from the Trove team, and there may
+> never be one - at best it might be *tolerated*, as a use-at-your-own-risk
+> thing. It signs in outside the official Glyph client, and if Trove's
+> anti-cheat is ever updated to detect that pattern - including because someone
+> else abuses a similar method - accounts that used it could be banned. Until
+> there is clear word otherwise, treat the risk as entirely your own.
+>
+> This is the maintainer's own caution, informed by talking to the team; it is
+> not a statement or an official position from the developers.
+
 A launcher for Trove that keeps the game up to date against Trion's CDN, signs
 in with your Glyph credentials and starts the game - without the Glyph client.
 Built to make switching between your own accounts less tedious - it remembers
