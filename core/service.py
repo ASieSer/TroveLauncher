@@ -710,9 +710,9 @@ class LauncherService:
         With the anti-cheat loader in the way we do not launch the game, we
         launch the loader; the game's process has to be hunted down afterwards,
         and the only thing that distinguishes it is that it was not there before.
-        Two accounts starting at once look at the same list and can settle on the
-        same Trove: one session goes unwatched and the other shows up under its
-        neighbour's name - which is exactly what pressing "Launch all" did.
+        Two launches fired close together look at the same list and can
+        settle on the same Trove: one session goes unwatched and the other
+        shows up under its neighbour's name.
 
         And the turn is not released on start, but when that session is UP.
         Launching the next while the previous one is still coming up is what

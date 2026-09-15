@@ -2,7 +2,8 @@
 
 A launcher for Trove that keeps the game up to date against Trion's CDN, signs
 in with your Glyph credentials and starts the game - without the Glyph client.
-Built for people who run several accounts at once.
+Built to make switching between your own accounts less tedious - it remembers
+them, so you are not retyping an email and password every time.
 
 **Windows and Linux.** On Linux the game launches inside its Wine or Proton
 prefix (see [Linux](#linux)).
@@ -182,19 +183,13 @@ Account status lives on the card and nowhere else - a group header does not
 summarise it, because "2 running" there says nothing about *which* two and
 gives you nothing to press.
 
-### Launching a group
+### What it does not do
 
-**"Launch all" starts them one at a time.** The accounts are prepared in
-parallel - updating, authenticating, waiting for 2FA - but the actual starts
-queue up, with a pause between them, and the next one does not go until the
-previous game is up.
-
-That is not caution for its own sake. With the anti-cheat loader in the way you
-do not launch the game, you launch the loader; the game's process has to be
-hunted down afterwards, and the only thing that identifies it is that it was not
-there before. Two simultaneous starts settle on the same Trove, and you end up
-with one session unwatched and another showing under its neighbour's name. One
-game folder is also updated once, not once per account.
+It launches accounts **one at a time** and does nothing once the game is
+running: no input automation, no macros, no bots, and nothing that keeps an
+account signed in on its own. It is a wrapper around signing in and pressing
+play - the same steps you would take in Glyph by hand - not a way to run
+accounts unattended or play several at once.
 
 ### Appearance
 
@@ -300,7 +295,7 @@ page loads over `file://` and Chromium refuses module scripts from that origin.
 | `board.js` | The board: groups, account cards, region menu. |
 | `dragdrop.js` | Dragging accounts and groups. |
 | `modals.js` | Dialogs. |
-| `actions.js` | Launch, test login, stop, launch all. |
+| `actions.js` | Launch, test login, stop. |
 | `settings.js` | The settings drawer and the install chips. |
 | `app.js` | Backend events, wiring, start-up. |
 

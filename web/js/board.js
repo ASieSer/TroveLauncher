@@ -173,19 +173,6 @@
         // is where it can be acted on. A counter in the header repeated the same
         // information without saying whose it was.
         const tools = el('div', 'group-tools');
-        const launchable = list.filter((a) => a.status !== 'running'
-            && a.status !== 'launching' && a.status !== 'checking');
-        if (launchable.length > 1) {
-            // The logo is a white PNG with alpha; the CSS uses it as a mask so
-            // it takes the accent colour instead of staying fixed white.
-            const all = el('button', 'launch-all', '<span class="launch-logo"></span>');
-            all.title = `Launch all ${launchable.length} accounts in ${group.name}`;
-            all.addEventListener('click', (e) => {
-                e.stopPropagation();
-                App.launchAll(launchable, group.name);
-            });
-            tools.appendChild(all);
-        }
         const edit = el('button', 'icon-btn', App.ICONS.gear);
         edit.title = 'Edit group';
         edit.addEventListener('click', (e) => { e.stopPropagation(); App.openGroupModal(group); });

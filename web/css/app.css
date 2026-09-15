@@ -239,8 +239,8 @@ body > * { position: relative; z-index: 1; }
 
 /* Own logo: the PNG/SVG goes in as a MASK, not as an image, so what is seen
    is the background - the accent - and the logo re-tints with the rest of the
-   interface (the same device the group's launch-all button uses). The aspect
-   ratio comes from the SVG's viewBox, so setting the height is enough. */
+   interface. The aspect ratio comes from the SVG's viewBox, so setting the
+   height is enough. */
 .brand-lockup {
     display: block;
     height: 26px;
@@ -996,7 +996,7 @@ body.rail-open .side-pin .side-icon { transform: rotate(180deg); }
 }
 .mod-page:hover { color: var(--text); border-color: var(--text-faint); }
 /* The globe goes in as a MASK, so it takes the button's colour instead of
-   staying the black it was drawn in. Same device as the launch-all logo. */
+   staying the black it was drawn in. Same device as the top-bar logo. */
 .mod-page .globe {
     display: block;
     width: 13px; height: 13px;
@@ -1480,14 +1480,6 @@ details.drawer-section[open] { padding-bottom: 10px; }
 }
 #folder-list { display: flex; flex-direction: column; gap: 8px; }
 
-/* The group's "launch all" button is set apart from the other tools. */
-.icon-btn.accent { color: var(--accent); }
-.icon-btn.accent:hover {
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-    color: var(--accent);
-}
-
 /* --- font switcher ------------------------------------------------------- */
 
 .segmented {
@@ -1567,12 +1559,10 @@ details.drawer-section[open] { padding-bottom: 10px; }
 /* It lives inside .group-tools, next to edit and delete, so it appears on
    hovering the header like the rest. It is set apart by size and colour, not by
    position. */
-/* The group header's three buttons share a box so they read as one toolbar,
-   and all three wear the group's own colour: they belong to that group and to
-   no other, and in grey they were three anonymous icons that could have come
-   from anywhere on the page. The launch one still leads, by being a shade
-   stronger rather than a different colour. */
-.launch-all,
+/* The group header's two buttons share a box so they read as one toolbar,
+   and both wear the group's own colour: they belong to that group and to no
+   other, and in grey they were anonymous icons that could have come from
+   anywhere on the page. */
 .group-tools .icon-btn {
     display: inline-flex;
     align-items: center;
@@ -1591,29 +1581,6 @@ details.drawer-section[open] { padding-bottom: 10px; }
     background: color-mix(in srgb, var(--group) 24%, transparent);
     border-color: var(--group-lit);
     color: color-mix(in srgb, var(--group) 25%, #ffffff);
-}
-.launch-all {
-    border-color: color-mix(in srgb, var(--group) 55%, transparent);
-    background: color-mix(in srgb, var(--group) 18%, transparent);
-}
-.launch-all:hover {
-    background: color-mix(in srgb, var(--group) 30%, transparent);
-    border-color: var(--group-lit);
-    color: color-mix(in srgb, var(--group) 25%, #ffffff);
-}
-.launch-all svg { width: 17px; height: 17px; display: block; }
-
-/* The logo goes in as a MASK, not as an <img>: the PNG is opaque white, so
-   painted as-is it would ignore the theme. Used as a mask, what is seen is the
-   background - currentColor - and the icon follows the accent like the rest of
-   the interface. */
-.launch-all .launch-logo {
-    display: block;
-    width: 19px;
-    height: 19px;
-    background: currentColor;
-    -webkit-mask: url("../img/launch-all.png") center / contain no-repeat;
-    mask: url("../img/launch-all.png") center / contain no-repeat;
 }
 
 /* The Protons found, in Settings -> Wine: pick one and that is the end of
